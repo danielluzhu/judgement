@@ -196,6 +196,25 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
 .stats b{font-variant-numeric:tabular-nums}
 .actions{display:flex; gap:12px; margin-top:16px; flex-wrap:wrap}
 .error{margin-top:14px; color:var(--nay); font-weight:700}
+
+/* ---- Conditions on the motion ---- */
+.conds{border:2px solid var(--rule); padding:10px 12px; margin:0 0 12px; background:color-mix(in srgb, var(--panel) 60%, transparent)}
+.conds summary{cursor:pointer; font-weight:800; font-size:15px}
+.conds summary .note{font-weight:400; margin:0}
+.cond-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; margin:12px 0 6px}
+.cond-grid label{display:flex; flex-direction:column; gap:3px; font-size:13px; font-weight:700; color:var(--muted)}
+.cond-grid label.wide{grid-column:1 / -1}
+.cond-grid input{width:100%}
+.tradeline{display:block; font-size:13.5px; margin-top:8px}
+@media (max-width:640px){ .cond-grid{grid-template-columns:1fr} }
+.entry.price{border-left:4px solid var(--present)}
+.entry.deal{border-left:4px solid var(--yea)}
+.entry.rules{border-left:4px solid var(--nay)}
+.cond-chip{display:inline-block; font-family:var(--sans); font-size:12px; font-weight:700; border:1.5px solid var(--rule);
+  padding:1px 7px; margin:2px 4px 2px 0; border-radius:99px; color:var(--muted)}
+.cond-chip.broken{border-color:var(--nay); color:var(--nay); text-decoration:line-through}
+.cond-chip.kept{border-color:var(--yea); color:var(--yea)}
+
 </style>
 </head>
 <body>
@@ -213,6 +232,19 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
     <div>
       <label class="big" for="motion">The motion before the Committee</label>
       <textarea id="motion" maxlength="300" placeholder="Should I get a burrito for lunch?"></textarea>
+
+      <details class="conds" id="conds">
+        <summary>Conditions on the motion <span class="note">optional — budget, vendor, procurement</span></summary>
+        <div class="cond-grid">
+          <label>Budget ceiling<input class="text" id="c-budget" maxlength="40" placeholder="$15"></label>
+          <label>Required vendor<input class="text" id="c-vendor" maxlength="60" placeholder="only from La Única"></label>
+          <label>Procurement process<input class="text" id="c-proc" maxlength="90" placeholder="three written quotes"></label>
+          <label>Deadline<input class="text" id="c-deadline" maxlength="40" placeholder="before 1 p.m."></label>
+          <label class="wide">Non-negotiable<input class="text" id="c-hard" maxlength="110" placeholder="must be vegetarian"></label>
+        </div>
+        <label class="tradeline"><input type="checkbox" id="p-trade" checked> Horse-trading: opponents may name a price for their support</label>
+      </details>
+
       <div class="convene">
         <button class="btn" id="go">Convene the Committee</button>
         <span class="eta" id="eta"></span>
@@ -899,6 +931,43 @@ function payerSentence(tally, n) {
   return `${top}${rest}`;
 }
 
+/* ---------- Conditions the petitioner attaches to the motion ----------
+   Real committees do not vote on a bare wish: there is a budget, an approved
+   vendor, a procurement process. These turn substitutes into something that can
+   be ruled out of order, which is where the comedy and the realism both live. */
+function readConds() {
+  const v = (id) => ($(id) ? $(id).value.trim() : '');
+  const c = { budget: v('c-budget'), vendor: v('c-vendor'), proc: v('c-proc'), deadline: v('c-deadline'), hard: v('c-hard') };
+  c.any = !!(c.budget || c.vendor || c.proc || c.deadline || c.hard);
+  return c;
+}
+function condsList(c) {
+  if (!c) return [];
+  const l = [];
+  if (c.budget) l.push(`Budget ceiling: ${c.budget}. Nothing costing more may be adopted.`);
+  if (c.vendor) l.push(`Required vendor: ${c.vendor}. Anything sourced elsewhere is out of order.`);
+  if (c.proc) l.push(`Procurement process: ${c.proc}. It must be followed.`);
+  if (c.deadline) l.push(`Deadline: ${c.deadline}. Nothing slower may be adopted.`);
+  if (c.hard) l.push(`Non-negotiable: ${c.hard}.`);
+  return l;
+}
+function condsShort(c) {
+  if (!c) return [];
+  const l = [];
+  if (c.budget) l.push(`under ${c.budget}`);
+  if (c.vendor) l.push(c.vendor);
+  if (c.proc) l.push(c.proc);
+  if (c.deadline) l.push(`by ${c.deadline}`);
+  if (c.hard) l.push(c.hard);
+  return l;
+}
+function condsBlock(c) {
+  const l = condsList(c);
+  return l.length
+    ? `\nUnder Standing Rule 7 the petitioner attached binding conditions to this motion:\n${l.map((x) => '- ' + x).join('\n')}\nAny version that breaks one of these can be ruled OUT OF ORDER.`
+    : '';
+}
+
 const PREFACE = 'You are a member of the Grand Committee, a legislative body that treats every trivial question with enormous, pompous seriousness. Stay fully in character, be funny, and keep it brief.';
 const FALLBACK_SUBS = ['Subcommittee on Unforeseen Consequences', 'Subcommittee on Vibes and Morale', 'Subcommittee on Things That Could Go Wrong',
   'Subcommittee on Fiscal Snacking', 'Subcommittee on Precedent and Regret', 'Subcommittee on Adjacent Matters'];
@@ -921,19 +990,21 @@ function voteWord(s, allowYesNo = true) {
    DEMOCRACY
    ========================================================= */
 async function democracy(motion) {
-  const P = { sub: $('p-sub').checked, amd: $('p-amd').checked, eis: $('p-eis').checked, fil: $('p-fil').checked, opn: $('p-opn').checked, prs: $('p-prs').checked, ask: $('p-ask').checked, cau: $('p-cau').checked };
+  const P = { sub: $('p-sub').checked, amd: $('p-amd').checked, eis: $('p-eis').checked, fil: $('p-fil').checked, opn: $('p-opn').checked, prs: $('p-prs').checked, ask: $('p-ask').checked, cau: $('p-cau').checked, trade: $('p-trade').checked };
+  const C = S.conds || { any: false };
   const models = shuffle(pool()).slice(0, delegateCount());
   S.delegates = models.map(mkDelegate);
   const D = S.delegates;
   const k = P.sub ? subCount(D.length) : 0;
-  const out = { mode: 'democracy', motion, P, title: null, subs: [], findings: [], eis: null, amendments: [], proposals: [], substitutes: [], testimony: [], caucusLines: [], filibuster: null, financial: looksFinancial(motion), payer: null };
+  const out = { mode: 'democracy', motion, P, conds: C, title: null, subs: [], findings: [], eis: null, amendments: [], proposals: [], substitutes: [], testimony: [], caucusLines: [], filibuster: null, financial: looksFinancial(motion), payer: null, rulings: [], concessions: [], struck: [] };
   S.financial = out.financial;
   $('positions').classList.remove('hidden'); renderPositions();
 
   setPhases([
     { k: 'order', name: 'Call to order' }, { k: 'hear', name: P.sub ? 'Subcommittee hearings' : 'Floor debate' },
     { k: 'ask', name: 'Questions for the petitioner', on: P.ask }, { k: 'cau', name: 'Caucus meetings', on: P.cau },
-    { k: 'eis', name: 'Environmental impact study', on: P.eis }, { k: 'rep', name: 'Subcommittee reports', on: P.sub },
+    { k: 'trade', name: 'Horse-trading', on: P.trade }, { k: 'eis', name: 'Environmental impact study', on: P.eis },
+    { k: 'rep', name: 'Subcommittee reports', on: P.sub }, { k: 'rules', name: 'Ruling of the Parliamentarian', on: C.any },
     { k: 'fil', name: 'Filibuster', on: P.fil }, { k: 'vote', name: 'Roll-call vote' }, { k: 'enact', name: 'Enactment' },
     { k: 'op', name: 'Opinions and press', on: P.opn || P.prs },
   ]);
@@ -951,6 +1022,7 @@ async function democracy(motion) {
   }
   if (clerkText && /^yes/i.test(firstLineValue(clerkText, 'FINANCIAL') || '')) out.financial = true;
   S.financial = out.financial; renderPositions();
+  if (C.any) chair(`The petitioner has attached ${condsList(C).length} binding condition${condsList(C).length === 1 ? '' : 's'} to this motion: ${condsShort(C).join('; ')}. Under Standing Rule 7 the Parliamentarian will rule any substitute that breaks them out of order.`, 'The Clerk');
   if (out.financial) chair('The Clerk notes that the motion has a fiscal impact. Under Standing Rule 4, no financial motion may pass until the Committee has established who is paying. This has never once been established.', 'The Clerk');
   out.title = (clerkText && firstLineValue(clerkText, 'TITLE')) || `The ${clip(motion.replace(/\?$/, ''), 60)} Act of 2026`;
   out.title = out.title.replace(/^["']|["']$/g, '');
@@ -970,8 +1042,8 @@ async function democracy(motion) {
   await runPool(order, poolLimit(), async (d) => {
     markSeat(d, 'speaking');
     const where = P.sub ? `, serving on the ${out.subs[d.sub]}` : ', speaking during floor debate';
-    const prompt = `${PREFACE}\n${persona(d)}\nYou are${where}. The motion before the Committee is: "${motion}", officially titled "${out.title}".\nGive a statement for the record in 1 to 3 sentences, in character, consistent with your disposition. Then add these lines:\nPOSITION: FOR, AGAINST, or AMEND\nPROPOSAL: if your position is AMEND, state concretely what the petitioner should get or do INSTEAD of or IN ADDITION to what they asked (e.g. a different dish, an extra item, a wholly different plan); otherwise NONE${out.financial ? '\nPAYER: who should pay for this, in a few words (the petitioner, their employer, the taxpayers, a friend, the Committee, someone specific...). Have an opinion.' : ''}${P.amd ? '\nAMENDMENT: an optional procedural rider to attach to the bill, or NONE' : ''}`;
-    const text = await ask(d.model, prompt, 240, 'statement', { motion, d, amd: P.amd, money: out.financial });
+    const prompt = `${PREFACE}\n${persona(d)}\nYou are${where}. The motion before the Committee is: "${motion}", officially titled "${out.title}".\nGive a statement for the record in 1 to 3 sentences, in character, consistent with your disposition.${condsBlock(C)}${C.any ? ' Any substitute you propose must respect those conditions, or it will be struck.' : ''} Then add these lines:\nPOSITION: FOR, AGAINST, or AMEND\nPROPOSAL: if your position is AMEND, state concretely what the petitioner should get or do INSTEAD of or IN ADDITION to what they asked (e.g. a different dish, an extra item, a wholly different plan); otherwise NONE${out.financial ? '\nPAYER: who should pay for this, in a few words (the petitioner, their employer, the taxpayers, a friend, the Committee, someone specific...). Have an opinion.' : ''}${P.amd ? '\nAMENDMENT: an optional procedural rider to attach to the bill, or NONE' : ''}${P.trade ? '\nPRICE: if your position is AGAINST, name ONE concrete concession that would buy your vote (a guarantee, a rider, a share of the spoils, a favour owed); otherwise NONE' : ''}`;
+    const text = await ask(d.model, prompt, 280, 'statement', { motion, d, amd: P.amd, money: out.financial, trade: P.trade, conds: C });
     markSeat(d, 'seated');
     if (!text) { d.missedHearing = true; absentee(d, pick(['did not respond and is presumed to be at lunch.', 'was absent from the hearing.', 'sent a staffer, who said nothing.'])); return; }
     const amendment = P.amd ? firstLineValue(text, 'AMENDMENT') : null;
@@ -979,7 +1051,11 @@ async function democracy(motion) {
     let pos = posWord(firstLineValue(text, 'POSITION')) || d.disp.lean;
     const hasProposal = proposal && proposal.length > 4 && !/^none\b/i.test(proposal);
     if (pos === 'AMEND' && !hasProposal) pos = d.disp.lean === 'AMEND' ? 'FOR' : d.disp.lean;
-    d.statement = clip(stripKeys(text, ['AMENDMENT', 'POSITION', 'PROPOSAL', 'PAYER']), 700);
+    d.statement = clip(stripKeys(text, ['AMENDMENT', 'POSITION', 'PROPOSAL', 'PAYER', 'PRICE']), 700);
+    if (P.trade) {
+      const price = firstLineValue(text, 'PRICE');
+      if (price && price.length > 5 && !/^none\b/i.test(price) && pos === 'AGAINST') d.price = clip(price.replace(/^["']|["']$/g, ''), 200);
+    }
     if (out.financial) d.payer = normPayer(firstLineValue(text, 'PAYER'));
     setPosition(d, pos);
     d.history.push(`At the hearing you declared yourself ${pos === 'AMEND' ? 'in favor of changing the motion' : pos === 'FOR' ? 'FOR the motion' : 'AGAINST the motion'}: "${clip(d.statement.replace(/\s+/g, ' '), 140)}"${d.payer ? `, and said ${d.payer} should pay` : ''}`);
