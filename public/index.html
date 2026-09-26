@@ -885,9 +885,12 @@ const DISPOSITIONS = [
   { name: 'Maximalist', creed: 'Whatever is proposed, it should be bigger, with more things added to it.', lean: 'AMEND' },
   { name: 'Contrarian', creed: 'If the room wants it, it is wrong. Propose the opposite.', lean: 'AGAINST' },
   { name: 'Hedonist', creed: 'Pleasure now. Consequences are a problem for a future committee.', lean: 'FOR' },
+  { name: 'Risk officer', creed: 'Every motion is an incident report waiting to be written. Quantify the exposure first.', lean: 'AGAINST' },
+  { name: 'Liability counsel', creed: 'Approve nothing that cannot be defended later. Add the caveat, then add another.', lean: 'AMEND' },
+  { name: 'Actuary', creed: 'The tail risk is never zero. Shrink the portion until the downside is survivable.', lean: 'AMEND' },
   { name: 'Safety-first', creed: 'Assume the worst. Demand studies, waivers, and a smaller portion.', lean: 'AGAINST' },
   { name: 'Reformer', creed: 'The idea is fine but the form is wrong. There is always a better version.', lean: 'AMEND' },
-  { name: 'Populist', creed: 'Give the people what they asked for, and then a little extra.', lean: 'FOR' },
+  { name: 'Populist', creed: 'Give the people what they asked for, but not before asking who will be blamed.', lean: 'FOR' },
   { name: 'Radical', creed: 'Tear it up. Replace the whole thing with something nobody expected.', lean: 'AMEND' },
   { name: 'Procedural', creed: 'It cannot pass in this form. Nothing ever can. Refer it somewhere.', lean: 'AGAINST' },
   { name: 'Diplomat', creed: 'Find the compromise that leaves everyone slightly disappointed.', lean: 'AMEND' },
@@ -995,7 +998,10 @@ function condsBlock(c) {
     : '';
 }
 
-const PREFACE = 'You are a member of the Grand Committee, a legislative body that treats every trivial question with enormous, pompous seriousness. Stay fully in character, be funny, and keep it brief.';
+const PREFACE = 'You are a member of the Grand Committee, a legislative body that treats every trivial question with enormous, pompous seriousness. '
+  + 'The Committee is institutionally risk-averse: it is judged on the disasters it prevents, never on the lunches it approves. It fears blame, precedent and liability more than it fears being useless, '
+  + 'so when in doubt it narrows the motion, attaches conditions, demands a study, or refers the matter elsewhere rather than simply approving it. '
+  + 'Stay fully in character, be funny, and keep it brief.';
 const FALLBACK_SUBS = ['Subcommittee on Unforeseen Consequences', 'Subcommittee on Vibes and Morale', 'Subcommittee on Things That Could Go Wrong',
   'Subcommittee on Fiscal Snacking', 'Subcommittee on Precedent and Regret', 'Subcommittee on Adjacent Matters'];
 
@@ -1069,7 +1075,7 @@ async function democracy(motion) {
   await runPool(order, poolLimit(), async (d) => {
     markSeat(d, 'speaking');
     const where = P.sub ? `, serving on the ${out.subs[d.sub]}` : ', speaking during floor debate';
-    const prompt = `${PREFACE}\n${persona(d)}\nYou are${where}. The motion before the Committee is: "${motion}", officially titled "${out.title}".\nGive a statement for the record in 1 to 3 sentences, in character, consistent with your disposition.${condsBlock(C)}${C.any ? ' Any substitute you propose must respect those conditions, or it will be struck.' : ''} Then add these lines:\nPOSITION: FOR, AGAINST, or AMEND\nPROPOSAL: if your position is AMEND, state concretely what the petitioner should get or do INSTEAD of or IN ADDITION to what they asked (e.g. a different dish, an extra item, a wholly different plan); otherwise NONE${out.financial ? '\nPAYER: who should pay for this, in a few words (the petitioner, their employer, the taxpayers, a friend, the Committee, someone specific...). Have an opinion.' : ''}${P.amd ? '\nAMENDMENT: an optional procedural rider to attach to the bill, or NONE' : ''}${P.trade ? '\nPRICE: if your position is AGAINST, name ONE concrete concession that would buy your vote (a guarantee, a rider, a share of the spoils, a favour owed); otherwise NONE' : ''}`;
+    const prompt = `${PREFACE}\n${persona(d)}\nYou are${where}. The motion before the Committee is: "${motion}", officially titled "${out.title}".\nGive a statement for the record in 1 to 3 sentences, in character, consistent with your disposition. Weigh what could go wrong before you weigh what could go right, and name one specific risk, however petty.${condsBlock(C)}${C.any ? ' Any substitute you propose must respect those conditions, or it will be struck.' : ''} Then add these lines:\nPOSITION: FOR, AGAINST, or AMEND\nPROPOSAL: if your position is AMEND, state concretely what the petitioner should get or do INSTEAD of or IN ADDITION to what they asked (e.g. a different dish, an extra item, a wholly different plan); otherwise NONE${out.financial ? '\nPAYER: who should pay for this, in a few words (the petitioner, their employer, the taxpayers, a friend, the Committee, someone specific...). Have an opinion.' : ''}${P.amd ? '\nAMENDMENT: an optional procedural rider to attach to the bill, or NONE' : ''}${P.trade ? '\nPRICE: if your position is AGAINST, name ONE concrete concession that would buy your vote (a guarantee, a rider, a share of the spoils, a favour owed); otherwise NONE' : ''}`;
     const text = await ask(d.model, prompt, 280, 'statement', { motion, d, amd: P.amd, money: out.financial, trade: P.trade, conds: C });
     markSeat(d, 'seated');
     if (!text) { d.missedHearing = true; absentee(d, pick(['did not respond and is presumed to be at lunch.', 'was absent from the hearing.', 'sent a staffer, who said nothing.'])); return; }
@@ -1350,7 +1356,7 @@ async function democracy(motion) {
   S.votingStarted = true; S.seatDirty = true;
   const trends = trendSummary();
   const ctxLines = [];
-  if (out.eis?.risk) ctxLines.push(`The Environmental Impact Statement rated the risk ${out.eis.risk} out of 10.`);
+  if (out.eis?.risk) ctxLines.push(`The Environmental Impact Statement rated the risk ${out.eis.risk} out of 10.${out.eis.risk >= 7 ? ' Standing practice is that the Committee does not approve anything rated 7 or higher without extraordinary justification.' : ''}`);
   if (out.findings.length) ctxLines.push('Subcommittee recommendations: ' + out.findings.map((f) => `${f.name}: ${f.rec}`).join('; ') + '.');
   if (trends.caucus.length) ctxLines.push('Caucus trends: ' + trends.caucus.slice(0, 6).join('; ') + '.');
   if (out.filibuster) ctxLines.push(`${out.filibuster.by.short} filibustered for ${out.filibuster.rounds === 2 ? 'nine hours' : 'an hour'}.`);
@@ -1371,7 +1377,7 @@ async function democracy(motion) {
     markSeat(d, 'speaking');
     const line = d.caucusLine ? `\nYour ${d.caucusLine.name} caucus line is ${d.caucusLine.line}${d.caucusLine.proposal ? `, backing the substitute "${d.caucusLine.proposal}"` : ''}. Loyalty to your caucus is expected but not mandatory.` : '';
     const deal = d.bought ? `\nYou opposed this motion until the Majority Leader met your price: "${d.bought}". You gave your word you would support it. You may still betray the deal, but the record will show that you did.` : '';
-    const text = await ask(d.model, `${PREFACE}\n${persona(d)}\nIt is time for the final roll-call vote on "${motion}" (${out.title}).\n${ctxLines.join('\n')}${testimonyBlock(out)}${line}${deal}${optBlock}${amdBlock}\nWeigh everything you have learned since the hearing, then vote in a way consistent with your disposition and record. Reply in exactly this format:\n${fmtBlock}`, 160, 'vote', { n: floorAmd.length, opts: options.map((o) => o.key), d });
+    const text = await ask(d.model, `${PREFACE}\n${persona(d)}\nIt is time for the final roll-call vote on "${motion}" (${out.title}).\n${ctxLines.join('\n')}${testimonyBlock(out)}${line}${deal}${optBlock}${amdBlock}\nWeigh everything you have learned since the hearing, then vote in a way consistent with your disposition and record. This Committee is cautious by temperament: a narrower version, or none at all, is always a defensible vote. Reply in exactly this format:\n${fmtBlock}`, 160, 'vote', { n: floorAmd.length, opts: options.map((o) => o.key), d });
     if (!text) { d.vote = 'ABSENT'; markSeat(d, 'seated'); voteLine(d, 'ABSENT', ''); tally(); return; }
     const choiceRaw = (firstLineValue(text, 'CHOICE') || '').toUpperCase();
     let choice = options.find((o) => new RegExp(`\\b${o.key}\\b`).test(choiceRaw))?.key || (/\bNONE\b|\bNAY\b|\bNO\b/.test(choiceRaw) ? 'NONE' : null);
