@@ -18,25 +18,51 @@ see the whole flow without spending anything.
 ## Democracy
 
 Each seated model becomes a delegate named after itself, with its Hugging Face
-org as its party ("Sen. Rocinante-12B (TheDrummer)"). A session runs:
+org as its party ("Sen. Rocinante-12B (TheDrummer)"). Two things are fixed for
+the life of a model:
+
+- Its **disposition** (Traditionalist, Fiscal hawk, Maximalist, Contrarian,
+  Radical, Diplomat, ...) is hashed from the model id, so the same model argues
+  from the same instincts in every session. Each later prompt carries the
+  delegate's own record from earlier phases, so it stays consistent while its
+  reasoning gets more informed.
+- Its **caucus** is its model lineage (Llama, Qwen, Mistral, Gemma, DeepSeek,
+  ...). Models descended from the same base confer and tend to vote together.
+
+A session runs:
 
 1. Call to order: a random Clerk writes an official bill title and names subcommittees.
-2. Hearings: every delegate gives a statement and may introduce an amendment.
-3. Environmental impact study, with a risk rating out of 10.
-4. Subcommittee reports: each chair issues a favorable or unfavorable finding.
-5. Filibuster: one delegate holds the floor; leadership needs three-fifths for cloture.
-   If cloture fails, the filibuster goes to hour nine.
-6. Roll-call vote: every delegate votes on each floor amendment and the motion.
-   Unparseable answers count as Present; models that don't respond are Absent.
-7. Majority opinion, dissent, and a tabloid headline from the press gallery.
+2. Hearings: every delegate declares FOR, AGAINST, or AMEND. Delegates who want
+   changes propose a concrete substitute: tacos instead of the burrito, add a
+   drink, skip lunch entirely. The sidebar tracks who stands where, and the
+   Clerk reads trends by caucus and by disposition into the record.
+3. Questions for the petitioner: a few delegates from different caucuses and
+   positions put a question to you directly. The session pauses until you answer
+   or decline; your testimony is distributed to every later phase.
+4. Caucus meetings: each lineage with two or more members elects a whip who
+   sets a caucus line and merges the members' ideas into one joint substitute.
+5. Environmental impact study, with a risk rating out of 10.
+6. Subcommittee reports: each chair issues a favorable or unfavorable finding.
+7. Filibuster: one delegate holds the floor; leadership needs three-fifths for cloture.
+8. Roll-call vote: every delegate chooses the original motion, one of up to
+   three substitutes on the floor, or none of the above, and votes on riders.
+   If "none" outvotes everything the motion fails; otherwise the plurality
+   version wins, so you may end up with something you did not ask for.
+9. Enactment: the Clerk writes the enrolled text, i.e. exactly what you now get.
+10. Majority opinion, dissent, and a tabloid headline from the press gallery.
 
-Every procedure except hearings and the vote can be switched off.
+The report shows "what you asked for" against "what you got", the vote on each
+version, every caucus's trend and line, whether caucuses held together, and the
+questions you were asked.
+
+Every procedure except hearings, the vote, and enactment can be switched off.
 
 ## Autocracy
 
-Pick an autocrat (or leave it blank for a random model). Ministers offer
-groveling advice, the autocrat issues a decree and may banish one of them, and
-state media reports the news. If the autocrat fails to respond, a coup installs
+Pick an autocrat (or leave it blank for a random model). The autocrat may
+interrogate you first, ministers offer groveling advice, and the autocrat
+issues a decree: yes, no, or something else entirely ("you shall have soup").
+It may banish a minister, and state media reports the news. If the autocrat fails to respond, a coup installs
 a random successor.
 
 ## About "Everyone"
