@@ -47,21 +47,62 @@ A session runs:
    whoever gets the most blame, and the enrolled text says so.
 4. Caucus meetings: each lineage with two or more members elects a whip who
    sets a caucus line and merges the members' ideas into one joint substitute.
-5. Environmental impact study, with a risk rating out of 10.
-6. Subcommittee reports: each chair issues a favorable or unfavorable finding.
-7. Filibuster: one delegate holds the floor; leadership needs three-fifths for cloture.
-8. Roll-call vote: every delegate chooses the original motion, one of up to
-   three substitutes on the floor, or none of the above, and votes on riders.
-   If "none" outvotes everything the motion fails; otherwise the plurality
-   version wins, so you may end up with something you did not ask for.
-9. Enactment: the Clerk writes the enrolled text, i.e. exactly what you now get.
-10. Majority opinion, dissent, and a tabloid headline from the press gallery.
+5. Horse-trading: delegates who declared AGAINST may have named a price for
+   their support. The Majority Leader sees the list and decides which prices the
+   bill can afford, bounded by your conditions. Bought delegates switch to FOR
+   and give their word. At the vote, some of them keep it.
+6. Environmental impact study, with a risk rating out of 10.
+7. Subcommittee reports: each chair issues a favorable or unfavorable finding.
+8. Ruling of the Parliamentarian: every substitute on the floor is checked
+   against the conditions you attached, costed, and ruled in order or struck.
+9. Filibuster: one delegate holds the floor; leadership needs three-fifths for cloture.
+10. Roll-call vote: every delegate chooses the original motion, one of the
+    surviving substitutes, or none of the above, and votes on riders.
+    If "none" outvotes everything the motion fails; otherwise the plurality
+    version wins, so you may end up with something you did not ask for.
+11. Enactment: the Clerk writes the enrolled text, i.e. exactly what you now get.
+12. Majority opinion, dissent, and a tabloid headline from the press gallery.
 
-The report shows "what you asked for" against "what you got", the vote on each
-version, every caucus's trend and line, whether caucuses held together, and the
+The session ends with a verdict card that sets **what you asked for** against
+**what you got**, side by side, with the conditions you attached, the vote, who
+was charged for it, which riders survived, and how many votes were bought.
+Below it the full report gives the vote on each version, every caucus's trend
+and line, whether caucuses held together, the Parliamentarian's rulings, and the
 questions you were asked.
 
 Every procedure except hearings, the vote, and enactment can be switched off.
+
+## Conditions on the motion
+
+Under the motion box is an optional panel of conditions, which is where the
+Committee stops being a toy:
+
+- **Budget ceiling** — nothing costing more may be adopted.
+- **Required vendor** — anything sourced elsewhere is out of order.
+- **Procurement process** — three written quotes, an approved supplier list,
+  whatever you like; it has to be followed.
+- **Deadline** — nothing slower may be adopted.
+- **Non-negotiable** — one condition that cannot be traded away.
+
+Delegates are told about them at the hearing and are supposed to respect them.
+They will not always. That is what the Parliamentarian is for: each substitute
+is costed and ruled on, and anything that breaks a condition is struck from the
+floor before the vote, with the reason read into the record. Set a $15 ceiling
+and watch how much of the chamber's best work turns out to be illegal.
+
+The autocrat is told your conditions too, and is under no obligation whatsoever.
+
+## Sharing a session
+
+Every finished session can be published to a link that carries the whole
+thing — each caucus meeting, every exchange with the petitioner, the
+Parliamentarian's rulings, the roll call, and the result. Press **Share this
+session** on the report.
+
+Sessions are stored as one JSON file per session under `data/sessions/`, which
+is gitignored. Nothing is stored as HTML: a shared transcript is re-rendered and
+re-escaped in the reader's browser, so a session cannot inject markup into the
+page. Links unfurl with the bill title and what the petitioner actually got.
 
 ## Autocracy
 
@@ -84,5 +125,7 @@ Use "Adjourn the session" to stop at any time; you'll still get a report.
 
 - `server.js`: serves the page and proxies calls to Featherless. Your key never
   reaches the browser. It reads your plan's concurrency from `/v1/plan`, weights
-  each call by model size, and retries on rate limits.
+  each call by model size, and retries on rate limits. It also stores and serves
+  shared sessions (`POST /api/share`, `GET /s/:id`).
 - `public/index.html`: the whole app.
+- `data/sessions/`: shared session transcripts, one JSON file each. Gitignored.
