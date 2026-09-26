@@ -12,6 +12,10 @@ Requires Node 18 or newer. No dependencies to install.
     node server.js
     # open http://localhost:3000
 
+Then, once, to find the models that answer quickly (see The verified bench below):
+
+    npm run probe
+
 Without a key the app runs in rehearsal mode with stand-in delegates, so you can
 see the whole flow without spending anything.
 
@@ -112,6 +116,47 @@ issues a decree: yes, no, or something else entirely ("you shall have soup").
 It may banish a minister, and state media reports the news. If the autocrat fails to respond, a coup installs
 a random successor.
 
+## Time, and why delegates go quiet
+
+A session is expected to finish inside a fixed time. The setup screen sets the hour at
+which the Committee rises — three minutes by default — and the chamber is scheduled
+against it: every phase is given a share of whatever time remains, weighted by how much
+work it is and capped by what it could actually use, so time saved early flows to the
+phases that follow. The roll call is protected; whatever else is cut, the chamber votes.
+Your own thinking time does not count: the clock stops while a delegate is waiting for
+you to answer a question.
+
+A delegate that has not replied when its phase runs out is simply not heard from. That
+is not hidden. Unresponsive delegates are ringed in the chamber diagram, listed in a
+sidebar panel with a count and the phases they missed, badged in the standings, and
+named in the final report. A model that goes quiet in the hearing and again at the roll
+call is visibly a repeat offender.
+
+### The verified bench
+
+Seating delegates uniformly at random is the honest reading of "every model on
+Featherless", and it is also slow: measured against this catalogue, a random long-tail
+model answers in about 16 seconds where a widely used one takes about 6. Worse, a large
+share of the catalogue never answers usefully at all — base models with no chat
+template, merges whose template is broken, reasoning models that spend the whole token
+budget thinking. Seated at random, half the chamber can end up silent.
+
+So there is a bench. `npm run probe` asks a few hundred plausible models to state a
+position, keeps the ones that reply in time, and writes them to `data/bench.json`
+fastest first:
+
+    node server.js                 # in one terminal
+    npm run probe                  # in another; takes a few minutes
+    npm run probe 600 8            # probe more, more at a time
+
+With **Seat only well-known, already-warm models** ticked the chamber is drawn from that
+bench, and a session comfortably fits the three minutes. Untick it to seat the whole
+catalogue and accept that the session will be long and the absentee list will be
+substantial. The estimate under the motion box tells you which of those you are choosing.
+
+The bench is specific to your plan and goes stale as models come and go, so it is not
+committed. Without it the app falls back to picking warm-looking models by organisation.
+
 ## About "Everyone"
 
 Featherless hosts tens of thousands of models. Seating all of them means roughly
@@ -128,4 +173,7 @@ Use "Adjourn the session" to stop at any time; you'll still get a report.
   each call by model size, and retries on rate limits. It also stores and serves
   shared sessions (`POST /api/share`, `GET /s/:id`).
 - `public/index.html`: the whole app.
+- `scripts/probe-bench.js`: probes the catalogue for models that actually answer and
+  writes `data/bench.json`. Run it with `npm run probe`.
 - `data/sessions/`: shared session transcripts, one JSON file each. Gitignored.
+- `data/bench.json`: the verified bench. Gitignored; regenerate per plan.
