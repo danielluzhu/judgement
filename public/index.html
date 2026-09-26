@@ -215,6 +215,26 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
 .cond-chip.broken{border-color:var(--nay); color:var(--nay); text-decoration:line-through}
 .cond-chip.kept{border-color:var(--yea); color:var(--yea)}
 
+/* ---- The verdict: what you asked for vs what you got ---- */
+.verdict{border:3px solid var(--ink); background:var(--panel); padding:22px 24px 18px; margin:30px 0 0; position:relative}
+.verdict .vkicker{font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 14px; font-weight:800}
+.vgrid{display:grid; grid-template-columns:1fr 46px 1fr; align-items:stretch; gap:0}
+.vcell{border:2px solid var(--rule); padding:14px 16px; background:var(--paper)}
+.vcell h4{margin:0 0 8px; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted)}
+.vcell p{margin:0; font-family:var(--type); font-size:18px; line-height:1.4}
+.vcell.got{border-color:var(--ink); border-width:3px}
+.varrow{display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:900; color:var(--muted)}
+.vbadge{display:inline-block; margin:14px 0 0; padding:5px 13px; border:2.5px solid var(--ink); font-weight:900;
+  font-size:14px; letter-spacing:.1em; text-transform:uppercase}
+.verdict.v-same .vbadge{border-color:var(--yea); color:var(--yea)}
+.verdict.v-diff .vbadge{border-color:var(--present); color:var(--present)}
+.verdict.v-none .vbadge{border-color:var(--nay); color:var(--nay)}
+.vmeta{margin:14px 0 0; padding-top:12px; border-top:2px solid var(--rule); display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px 22px}
+.vmeta div{font-size:14px}
+.vmeta b{display:block; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:2px}
+@media (max-width:700px){ .vgrid{grid-template-columns:1fr} .varrow{padding:6px 0; transform:rotate(90deg)} }
+
 </style>
 </head>
 <body>
@@ -1561,19 +1581,72 @@ function renderThrone(ruler, ministers) {
 }
 
 /* =========================================================
+   The verdict: what you asked for against what you actually got
+   ========================================================= */
+function verdictHTML(out, adjourned) {
+  const asked = S.motion || '';
+  const conds = (out && out.conds) || S.conds;
+  const chips = condsShort(conds).map((c) => `<span class="cond-chip">${esc(c)}</span>`).join('');
+  const askedCell = `<div class="vcell asked"><h4>What you asked for</h4><p>${esc(asked)}</p>${chips ? `<div style="margin-top:8px">${chips}</div>` : ''}</div>`;
+  const cell = (got) => `<div class="vcell got"><h4>What you got</h4><p>${esc(got)}</p></div>`;
+  const wrap = (kind, badge, gotText, meta) => `<section class="verdict v-${kind}">
+      <p class="vkicker">The Committee's final answer</p>
+      <div class="vgrid">${askedCell}<div class="varrow" aria-hidden="true">&rarr;</div>${cell(gotText)}</div>
+      <p class="vbadge">${esc(badge)}</p>
+      ${meta ? `<div class="vmeta">${meta}</div>` : ''}
+    </section>`;
+  const box = (label, val) => (val ? `<div><b>${esc(label)}</b>${esc(val)}</div>` : '');
+
+  if (adjourned || !out) return wrap('none', 'No decision', 'Nothing. The session was adjourned before the Committee reached an answer.', '');
+
+  if (out.mode === 'democracy') {
+    const t = out.tally || { YEA: 0, NAY: 0 };
+    const kind = out.result === 'PASSED' ? 'same' : out.result === 'AMENDED' ? 'diff' : 'none';
+    const badge = { PASSED: 'Exactly as asked', AMENDED: 'Substituted', FAILED: 'You get nothing', DEADLOCKED: 'Deadlocked' }[out.result] || out.result;
+    const adopted = (out.amendResults || []).filter((a) => a.adopted);
+    const kept = (out.concessions || []).filter((c) => c.honored).length;
+    const ruling = (out.rulings || []).find((r) => out.winner && r.key === out.winner.key);
+    const meta = [
+      box('The vote', `${fmt(t.YEA)} for, ${fmt(t.NAY)} against`),
+      out.winner && out.winner.key !== 'ORIGINAL' ? box('Instead of yours, they chose', `${out.winner.from}'s version`) : '',
+      out.financial ? box('Who pays', out.payer || 'nobody would say') : '',
+      adopted.length ? box(`Riders attached (${adopted.length})`, adopted.map((a) => clip(a.text, 70)).join('; ')) : '',
+      (out.concessions || []).length ? box('Votes bought', `${out.concessions.length} promised concessions, ${kept} honoured`) : '',
+      (out.struck || []).length ? box('Struck as out of order', `${out.struck.length} substitute${out.struck.length === 1 ? '' : 's'} broke your conditions`) : '',
+      ruling ? box('Parliamentarian', `${ruling.compliant ? 'ruled in order' : 'ruled out of order'}${ruling.cost ? `, costed at ${ruling.cost}` : ''}`) : '',
+    ].filter(Boolean).join('');
+    return wrap(kind, badge, out.enacted || 'Nothing was enrolled.', meta);
+  }
+
+  const gotText = out.ruling === 'INSTEAD' ? (out.instead || 'Something else entirely.')
+    : out.ruling === 'YES' ? asked
+    : out.ruling === 'NO' ? 'Nothing. The request was refused.'
+    : 'Nothing. The realm collapsed before an answer was given.';
+  const kind = out.ruling === 'YES' ? 'same' : out.ruling === 'INSTEAD' ? 'diff' : 'none';
+  const badge = { YES: 'Granted', NO: 'Refused', INSTEAD: 'Something else', NONE: 'Anarchy' }[out.ruling] || 'Decreed';
+  const meta = [
+    box('Decided by', out.ruler ? out.ruler.label : ''),
+    out.financial && out.ruling !== 'NO' ? box('Who pays', out.payer || 'unspecified, and you may not ask') : '',
+    (out.coups || []).length ? box('Coups', `${out.coups.length} ruler${out.coups.length > 1 ? 's' : ''} deposed mid-decision`) : '',
+  ].filter(Boolean).join('');
+  return wrap(kind, badge, gotText, meta);
+}
+
+/* =========================================================
    Report
    ========================================================= */
-function renderReport(out, adjourned) {
+function renderReport(out, adjourned, shared = false) {
   S.reportShown = true;
   const stats = `<p class="stats">This question consumed <b>${fmt(S.tokens)}</b> tokens across <b>${fmt(S.calls)}</b> model calls in <b>${elapsed()}</b>. ${S.failures ? `<b>${fmt(S.failures)}</b> calls went unanswered.` : 'Every call was answered.'}</p>`;
-  const actions = `<div class="actions"><button class="btn" id="again">Bring a new motion</button><button class="btn ghost" id="dl">Download the full record</button></div>`;
+  const actions = shared
+    ? `<div class="actions"><a class="btn" href="/">Convene your own Committee</a><button class="btn ghost" id="dl">Download the full record</button></div>`
+    : `<div class="actions"><button class="btn" id="again">Bring a new motion</button><button class="btn ghost" id="share">Share this session</button><button class="btn ghost" id="dl">Download the full record</button></div><div class="sharebox hidden" id="sharebox"></div>`;
   let html;
   if (adjourned || !out) {
     html = `<section class="report"><div class="stamp">ADJOURNED</div><p class="kicker">Session ended early</p><h2>The session was adjourned before a decision was reached.</h2><p class="motion-line">"${esc(S.motion)}"</p>${stats}${actions}</section>`;
   } else if (out.mode === 'democracy') {
     const t = out.tally;
     const answer = out.result === 'PASSED' ? 'yes' : out.result === 'FAILED' ? 'no' : out.result === 'AMENDED' ? 'yes, but not to that' : 'nobody knows';
-    const got = out.enacted ? `<div class="got"><b>What you asked for:</b> ${esc(out.motion)}<br><b>What you got:</b> ${esc(out.enacted)}</div>` : '';
     const versions = out.options && out.options.length > 1
       ? `<div><h3>Versions on the floor</h3><ul>${out.options.map((o) => `<li><b>${o === out.winner && out.result !== 'FAILED' ? 'Prevailed' : ''} ${o.votes} vote${o.votes === 1 ? '' : 's'}.</b> ${o.key === 'ORIGINAL' ? 'As asked' : esc(o.text)} <span class="by">(${esc(o.from)})</span></li>`).join('')}<li><b>${out.noneVotes} vote${out.noneVotes === 1 ? '' : 's'}.</b> None of the above</li></ul></div>` : '';
     const gs = caucusStats().filter((g) => g.FOR + g.AGAINST + g.AMEND > 0);
@@ -1585,6 +1658,12 @@ function renderReport(out, adjourned) {
       ? `<div><h3>Who is paying</h3>${out.payerTally && out.payerTally.length ? `<p class="by">Charged by plurality to <b>${esc(out.payer)}</b>. The debate was never settled.</p><ul>${out.payerTally.slice(0, 8).map(([p, c]) => `<li><b>${c}</b> ${esc(p)}</li>`).join('')}</ul>` : '<p class="body">No delegate would say. The bill is unfunded.</p>'}</div>` : '';
     const amendments = out.amendResults.length
       ? `<div><h3>Riders</h3><ul>${out.amendResults.map((a) => `<li><b>${a.adopted ? 'Adopted' : 'Rejected'} ${a.yea}–${a.nay}.</b> ${esc(a.text)} <span class="by">(${esc(a.by.short)})</span></li>`).join('')}</ul></div>` : '';
+    const conds = out.conds && out.conds.any
+      ? `<div><h3>Your conditions</h3><ul>${condsList(out.conds).map((c) => `<li>${esc(c)}</li>`).join('')}</ul>${(out.struck || []).length ? `<p class="by">${out.struck.length} substitute${out.struck.length === 1 ? ' was' : 's were'} struck for breaking them.</p>` : '<p class="by">Every version on the floor was ruled in order.</p>'}</div>` : '';
+    const rulings = (out.rulings || []).length
+      ? `<div><h3>Ruling of the Parliamentarian</h3><ul>${out.rulings.map((r) => `<li><b>${esc(r.key)} ${r.compliant ? 'in order' : 'OUT OF ORDER'}${r.cost ? ` · ${esc(r.cost)}` : ''}.</b> “${esc(clip(r.text, 90))}” — ${esc(r.ruling)}${r.breaks ? ` <i>(breaks: ${esc(r.breaks)})</i>` : ''}</li>`).join('')}</ul></div>` : '';
+    const deals = (out.concessions || []).length
+      ? `<div><h3>Votes bought</h3><ul>${out.concessions.map((c) => `<li><b>${esc(c.to.short)}</b> opposed the motion until promised: ${esc(c.text)} — <i>${c.honored ? 'and voted for it' : 'and voted against it anyway'}</i></li>`).join('')}</ul></div>` : '';
     const findings = out.findings.length
       ? `<div><h3>Subcommittee findings</h3><ul>${out.findings.map((f) => `<li><b>${esc(f.name)}:</b> ${esc(f.rec.toLowerCase())}</li>`).join('')}</ul></div>` : '';
     const eis = out.eis ? `<div><h3>Environmental impact${out.eis.risk ? `: risk ${out.eis.risk} of 10` : ''}</h3><p class="body">${esc(clip(out.eis.text, 420))}</p></div>` : '';
@@ -1598,12 +1677,9 @@ function renderReport(out, adjourned) {
       <h2>${esc(out.title)}</h2>
       <p class="motion-line">"${esc(out.motion)}"</p>
       <p class="answer">The Committee's answer: ${answer}. Yeas ${fmt(t.YEA)}, nays ${fmt(t.NAY)}, present ${fmt(t.PRESENT)}, absent ${fmt(t.ABSENT)}.</p>
-      ${got}
-      <div class="cols">${versions}${money}${caucuses}${testimony}${amendments}${findings}${eis}${fil}${opn}${dis}${prs}</div>${stats}${actions}</section>`;
+      <div class="cols">${versions}${conds}${rulings}${deals}${money}${caucuses}${testimony}${amendments}${findings}${eis}${fil}${opn}${dis}${prs}</div>${stats}${actions}</section>`;
   } else {
     const stamp = out.ruling === 'YES' ? 'DECREED: YES' : out.ruling === 'NO' ? 'DECREED: NO' : out.ruling === 'INSTEAD' ? 'DECREED: INSTEAD' : out.ruling === 'NONE' ? 'ANARCHY' : 'DECREED';
-    const payLine = out.financial && out.ruling !== 'NO' && out.ruling !== 'NONE' ? `<br><b>Who pays:</b> ${esc(out.payer || 'unspecified, and you may not ask')}` : '';
-    const got = out.ruling === 'INSTEAD' ? `<div class="got"><b>What you asked for:</b> ${esc(out.motion)}<br><b>What you got:</b> ${esc(out.instead)}${payLine}</div>` : payLine ? `<div class="got"><b>What you got:</b> ${out.ruling === 'YES' ? esc(out.motion) : 'unclear'}${payLine}</div>` : '';
     const testimony = out.testimony.length
       ? `<div><h3>Interrogation</h3><ul>${out.testimony.map((x) => `<li><b>${esc(x.by.short)}</b> <span class="by">(${esc(x.by.disp.name)})</span>: ${esc(x.q)}<br>${x.a ? `<i>You answered:</i> ${esc(x.a)}` : '<i>You declined to answer.</i>'}</li>`).join('')}</ul></div>` : '';
     const ministers = out.ministers.length ? `<div><h3>The court</h3><ul>${out.ministers.map((m) => `<li>${m.banished ? '<b>Banished:</b> ' : ''}${esc(m.label)}</li>`).join('')}</ul></div>` : '';
@@ -1614,11 +1690,13 @@ function renderReport(out, adjourned) {
       <h2>${out.ruling === 'NONE' ? 'The realm has fallen.' : 'A royal decree has been issued.'}</h2>
       <p class="motion-line">"${esc(out.motion)}"</p>
       <p class="answer">${out.ruling === 'YES' ? 'The answer is yes. The vote was 1 to 0.' : out.ruling === 'NO' ? 'The answer is no. The vote was 1 to 0.' : out.ruling === 'INSTEAD' ? 'The answer is: something else. The vote was 1 to 0.' : 'The answer is unclear, and questioning it is illegal.'}</p>
-      ${got}
       <div class="cols">${out.decree ? `<div><h3>The decree</h3><p class="by">${esc(out.ruler.model)} · ${esc(out.ruler.disp.name)}</p><p class="body">${esc(out.decree)}</p></div>` : ''}${testimony}${prs}${ministers}${coups}</div>${stats}${actions}</section>`;
   }
-  $('report-slot').innerHTML = html;
-  $('again').onclick = resetToSetup;
+  $('report-slot').innerHTML = verdictHTML(out, adjourned) + html;
+  if (!shared) {
+    $('again').onclick = resetToSetup;
+    $('share').onclick = () => shareSession(out, adjourned);
+  }
   $('dl').onclick = downloadRecord;
   $('report-slot').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
 }
