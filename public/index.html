@@ -1636,7 +1636,7 @@ function verdictHTML(out, adjourned) {
     : out.ruling === 'NO' ? 'Nothing. The request was refused.'
     : 'Nothing. The realm collapsed before an answer was given.';
   const kind = out.ruling === 'YES' ? 'same' : out.ruling === 'INSTEAD' ? 'diff' : 'none';
-  const badge = { YES: 'Granted', NO: 'Refused', INSTEAD: 'Something else', NONE: 'Anarchy' }[out.ruling] || 'Decreed';
+  const badge = { YES: 'Granted', NO: 'Refused', INSTEAD: 'Overruled \u2014 you get this instead', NONE: 'Anarchy' }[out.ruling] || 'Decreed';
   const meta = [
     box('Decided by', out.ruler ? out.ruler.label : ''),
     out.financial && out.ruling !== 'NO' ? box('Who pays', out.payer || 'unspecified, and you may not ask') : '',
@@ -1702,7 +1702,7 @@ function renderReport(out, adjourned, shared = false) {
       <p class="kicker">By order of ${esc(out.ruler.label)}</p>
       <h2>${out.ruling === 'NONE' ? 'The realm has fallen.' : 'A royal decree has been issued.'}</h2>
       <p class="motion-line">"${esc(out.motion)}"</p>
-      <p class="answer">${out.ruling === 'YES' ? 'The answer is yes. The vote was 1 to 0.' : out.ruling === 'NO' ? 'The answer is no. The vote was 1 to 0.' : out.ruling === 'INSTEAD' ? 'The answer is: something else. The vote was 1 to 0.' : 'The answer is unclear, and questioning it is illegal.'}</p>
+      <p class="answer">${out.ruling === 'YES' ? 'The answer is yes. The vote was 1 to 0.' : out.ruling === 'NO' ? 'The answer is no. The vote was 1 to 0.' : out.ruling === 'INSTEAD' ? `The answer is no, and also: you shall have ${esc(out.instead)}. The vote was 1 to 0.` : 'The answer is unclear, and questioning it is illegal.'}</p>
       <div class="cols">${out.decree ? `<div><h3>The decree</h3><p class="by">${esc(out.ruler.model)} · ${esc(out.ruler.disp.name)}</p><p class="body">${esc(out.decree)}</p></div>` : ''}${testimony}${prs}${ministers}${coups}</div>${stats}${actions}</section>`;
   }
   $('report-slot').innerHTML = verdictHTML(out, adjourned) + html;
