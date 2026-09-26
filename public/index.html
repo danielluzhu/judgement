@@ -355,7 +355,8 @@ const clip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
 const S = {
   mode: 'democracy', models: [], hasKey: false, plan: null, concurrency: 2,
   rehearsal: false, size: 50, running: false, stop: false, ctrl: null,
-  tokens: 0, calls: 0, failures: 0, t0: 0, record: [], delegates: [], seatDirty: true,
+  tokens: 0, calls: 0, failures: 0, t0: 0, record: [], entries: [], delegates: [], seatDirty: true,
+  conds: null, elapsedFixed: null, shared: false,
 };
 
 const MOCK_MODELS = [
@@ -537,32 +538,68 @@ const poolLimit = () => (S.rehearsal ? 10 : Math.max(4, Math.min(24, S.concurren
    Record + rendering
    ========================================================= */
 const FEED_MAX = 350;
-function addNode(html, textForRecord) {
+function addNode(html, textForRecord, entry) {
   S.record.push(textForRecord);
+  if (entry) S.entries.push(entry);
   const feed = $('feed');
   feed.insertAdjacentHTML('beforeend', html);
   while (feed.children.length > FEED_MAX) { feed.firstElementChild.remove(); $('trim').classList.remove('hidden'); }
   const nearBottom = window.innerHeight + window.scrollY > document.body.scrollHeight - 400;
   if (nearBottom && !S.reportShown) feed.lastElementChild?.scrollIntoView({ block: 'nearest' });
 }
-function phaseHead(name) { addNode(`<h3 class="phase-head">${esc(name)}</h3>`, `\n=== ${name.toUpperCase()} ===\n`); }
-function chair(text, who = 'The Chair') { addNode(`<p class="chair"><b>${esc(who)}:</b> ${esc(text)}</p>`, `${who}: ${text}`); }
+/* Every line of the session is kept as a structured entry, never as raw HTML, so a
+   shared transcript can be re-rendered (and re-escaped) instead of trusted. */
+function entryHTML(e) {
+  switch (e.t) {
+    case 'phase':
+      return `<h3 class="phase-head" id="ph-${esc(e.k || '')}">${esc(e.name)}</h3>`;
+    case 'chair':
+      return `<p class="chair"><b>${esc(e.who)}:</b> ${esc(e.text)}</p>`;
+    case 'absent':
+      return `<p class="absentee">${esc(e.label)} ${esc(e.what)}</p>`;
+    case 'vote':
+      return `<p class="vote"><span class="v ${esc(e.v)}">${e.v === 'YEA' ? 'Yea' : e.v === 'NAY' ? 'Nay' : e.v === 'PRESENT' ? 'Present' : 'Absent'}</span>${esc(e.label)}${e.reason ? ': ' + esc(e.reason) : ''}</p>`;
+    case 'qa': {
+      const who = `<span class="who">${esc(e.label)}<small>${esc(e.faction || '')}${e.disp ? ` · ${esc(e.disp)}` : ''}</small></span><span class="role">${esc(e.kind || '')}</span>`;
+      const ans = e.a ? `The petitioner answers: "${e.a}"` : 'The petitioner declines to answer. Murmurs in the gallery.';
+      return `<article class="entry question">${who}<p>${esc(e.q)}</p><p class="answer-line">${esc(ans)}</p></article>`;
+    }
+    case 'speech': {
+      const fam = e.family && e.family !== 'Unaffiliated' ? `<small>${esc(e.family)} caucus · ${esc(e.disp || '')}</small>` : (e.disp ? `<small>${esc(e.disp)}</small>` : '');
+      const t = e.tag ? `<span class="tag ${esc(e.tag)}">${e.tag === 'AMEND' ? 'wants changes' : esc(String(e.tag).toLowerCase())}</span>` : '';
+      return `<article class="entry ${esc(e.cls || '')}"><span class="who">${esc(e.label)}${fam}</span><span class="role">${esc(e.role)}</span>${t}<p>${esc(e.text)}</p></article>`;
+    }
+    default: return '';
+  }
+}
+function entryText(e) {
+  switch (e.t) {
+    case 'phase': return `\n=== ${String(e.name).toUpperCase()} ===\n`;
+    case 'chair': return `${e.who}: ${e.text}`;
+    case 'absent': return `${e.label} ${e.what}`;
+    case 'vote': return `${e.v.padEnd(8)} ${e.label}${e.reason ? ': ' + e.reason : ''}`;
+    case 'qa': return `${e.label} [${e.kind || 'Question'}]:\n${e.q}\n` + (e.a ? `The petitioner answers: "${e.a}"` : 'The petitioner declines to answer.');
+    case 'speech': return `${e.label} [${e.role}]${e.tag ? ` <${e.tag}>` : ''} (${e.model || ''}${e.family ? `, ${e.family} caucus, ${e.disp}` : ''}):\n${e.text}\n`;
+    default: return '';
+  }
+}
+function push(entry) { addNode(entryHTML(entry), entryText(entry), entry); }
+function phaseHead(name, k) { push({ t: 'phase', name, k: k || '' }); }
+function chair(text, who = 'The Chair') { push({ t: 'chair', who, text }); }
 function speech(d, role, text, cls = '', tag = null) {
-  const fam = d.family && d.family !== 'Unaffiliated' ? `<small>${esc(d.family)} caucus · ${esc(d.disp?.name || '')}</small>` : (d.disp ? `<small>${esc(d.disp.name)}</small>` : '');
-  const t = tag ? `<span class="tag ${tag}">${tag === 'AMEND' ? 'wants changes' : tag.toLowerCase()}</span>` : '';
-  addNode(`<article class="entry ${cls}"><span class="who">${esc(d.label)}${fam}</span><span class="role">${esc(role)}</span>${t}<p>${esc(text)}</p></article>`,
-    `${d.label} [${role}]${tag ? ` <${tag}>` : ''} (${d.model}${d.family ? `, ${d.family} caucus, ${d.disp.name}` : ''}):\n${text}\n`);
+  push({ t: 'speech', label: d.label, model: d.model, family: d.family, disp: d.disp?.name || null, role, text, cls, tag });
 }
 /* An interactive question from a delegate to the petitioner (the user). Resolves with the answer, or null if declined. */
 function askUser(d, question, kind) {
   return new Promise((resolve) => {
     const id = `q${S.calls}-${Math.random().toString(36).slice(2, 7)}`;
     const faction = d.family && d.family !== 'Unaffiliated' ? `${d.family} caucus` : (d.party !== 'Independent' ? `${d.party} party` : 'Independent');
+    const entry = { t: 'qa', label: d.label, faction, disp: d.disp?.name || null, kind, q: question, a: null };
     addNode(`<article class="entry question" id="${id}"><span class="who">${esc(d.label)}<small>${esc(faction)}${d.disp ? ` · ${esc(d.disp.name)}` : ''}</small></span><span class="role">${esc(kind)}</span>
       <p>${esc(question)}</p>
       <div class="qbox"><textarea rows="2" maxlength="300" placeholder="Answer the ${esc(faction)}…"></textarea>
       <div class="qbtns"><button class="btn small">Answer</button><button class="btn ghost small">Decline to answer</button></div></div></article>`,
-      `${d.label} [${kind}] (${d.model}, ${faction}):\n${question}\n`);
+      `${d.label} [${kind}] (${d.model}, ${faction}):\n${question}\n`, entry);
     const node = $(id); const ta = node.querySelector('textarea'); const [ok, no] = node.querySelectorAll('button');
     ta.focus({ preventScroll: true }); node.scrollIntoView({ block: 'nearest' });
     const done = (ans) => {
@@ -570,6 +607,7 @@ function askUser(d, question, kind) {
       const shown = ans ? `The petitioner answers: "${ans}"` : 'The petitioner declines to answer. Murmurs in the gallery.';
       node.insertAdjacentHTML('beforeend', `<p class="answer-line">${esc(shown)}</p>`);
       S.record.push(shown);
+      entry.a = ans;
       S.pendingQuestion = null;
       resolve(ans);
     };
@@ -620,13 +658,8 @@ function testimonyBlock(out) {
   const t = (out.testimony || []).filter((x) => x.a);
   return t.length ? '\nThe petitioner has testified under questioning:\n' + t.map((x) => `- Asked by ${x.by.short} (${x.by.family} caucus): "${x.q}" — Answer: "${x.a}"`).join('\n') : '';
 }
-function absentee(d, what) {
-  addNode(`<p class="absentee">${esc(d.label)} ${esc(what)}</p>`, `${d.label} ${what}`);
-}
-function voteLine(d, v, reason) {
-  addNode(`<p class="vote"><span class="v ${v}">${v === 'YEA' ? 'Yea' : v === 'NAY' ? 'Nay' : v === 'PRESENT' ? 'Present' : 'Absent'}</span>${esc(d.label)}${reason ? ': ' + esc(reason) : ''}</p>`,
-    `${v.padEnd(8)} ${d.label}${reason ? ': ' + reason : ''}`);
-}
+function absentee(d, what) { push({ t: 'absent', label: d.label, what }); }
+function voteLine(d, v, reason) { push({ t: 'vote', label: d.label, v, reason }); }
 
 function renderStats() {
   $('tokens').textContent = fmt(S.tokens);
@@ -639,6 +672,7 @@ function startClock() {
   clockTimer = setInterval(() => { $('clock').textContent = elapsed(); }, 1000);
 }
 function elapsed() {
+  if (S.elapsedFixed) return S.elapsedFixed;
   const s = Math.floor((Date.now() - S.t0) / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = String(s % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
