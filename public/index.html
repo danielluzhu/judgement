@@ -142,6 +142,12 @@ input.text{flex:1; min-width:200px; border:1.5px solid var(--ink); background:tr
 .caucuses .bar i{display:block; height:100%}
 .caucuses .bar .f{background:var(--yea)} .caucuses .bar .a{background:var(--present)} .caucuses .bar .g{background:var(--nay)}
 .caucuses .trend{grid-column:1/-1; font-size:12px; color:var(--muted); font-style:italic}
+.payers{list-style:none; margin:0; padding:0; max-height:200px; overflow:auto}
+.payers li{border-top:1px solid var(--rule); padding:4px 0; display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:center; font-size:12.5px}
+.payers li b{font-variant-numeric:tabular-nums; min-width:22px; color:var(--nay)}
+.payers li .bar{height:5px; background:var(--nay); opacity:.7}
+.payers li .p{grid-column:1/-1; font-family:var(--type); font-size:12px}
+.entry.money p{border-left:4px solid var(--nay); padding-left:10px}
 .tag{display:inline-block; font-family:var(--sans); font-size:10.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
   padding:1px 6px; margin-left:8px; border:1.5px solid currentColor; vertical-align:2px}
 .tag.FOR{color:var(--yea)} .tag.AGAINST{color:var(--nay)} .tag.AMEND{color:var(--present)}
@@ -314,6 +320,10 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
           </div>
           <div class="pos-head" style="margin-top:12px">Caucuses and trends</div>
           <ul class="caucuses" id="caucuses"></ul>
+          <div id="payers-wrap" class="hidden">
+            <div class="pos-head" style="margin-top:12px">Who is paying?</div>
+            <ul class="payers" id="payers"></ul>
+          </div>
         </div>
         <div class="throne hidden" id="throne">
           <div class="crown">Seated on the throne</div>
@@ -465,10 +475,10 @@ function updateEta() {
   if (S.mode === 'democracy') {
     const d = delegateCount(), k = subCount(d);
     calls = 2 + d + d + ($('p-sub').checked ? k : 0) + ($('p-eis').checked ? 1 : 0)
-      + ($('p-ask').checked ? Math.max(2, Math.min(4, Math.round(d / 15))) : 0) + ($('p-cau').checked ? Math.min(8, Math.ceil(d / 6)) : 0)
+      + ($('p-ask').checked ? Math.max(2, Math.min(4, Math.round(d / 15))) * 5 + 4 : 0) + ($('p-cau').checked ? Math.min(8, Math.ceil(d / 6)) : 0)
       + ($('p-fil').checked ? 2 + k : 0) + ($('p-opn').checked ? 2 : 0) + ($('p-prs').checked ? 1 : 0);
   } else {
-    calls = 2 + (Number($('mcount').value) || 0) + ($('a-ask').checked ? 1 : 0);
+    calls = 2 + (Number($('mcount').value) || 0) + ($('a-ask').checked ? 3 : 0);
   }
   const asks = S.mode === 'democracy' ? $('p-ask').checked : $('a-ask').checked;
   const pause = asks ? ' The session will pause while delegates question you.' : '';
@@ -569,6 +579,43 @@ function askUser(d, question, kind) {
     S.pendingQuestion = () => done(null);
   });
 }
+/* A full exchange: the delegate asks, the petitioner answers, the delegate reacts and may press
+   a follow-up (at most `depth` rounds), and a rival from another caucus gets a word in. */
+async function converse(d, question, kind, out, opts = {}) {
+  const depth = opts.depth ?? 2; const money = !!opts.money;
+  let q = question; let exchanges = [];
+  for (let round = 0; round < depth && q; round++) {
+    const a = await askUser(d, q, round ? 'Follow-up' : kind);
+    if (S.stop) throw new Adjourned();
+    exchanges.push({ q, a });
+    out.testimony.push({ by: d, q, a, money });
+    d.history.push(`You asked the petitioner: "${clip(q, 120)}" and they ${a ? `answered: "${clip(a, 120)}"` : 'refused to answer'}`);
+    markSeat(d, 'speaking');
+    const r = await ask(d.model, `${PREFACE}\n${persona(d)}\nYou asked the petitioner: "${q}"\nThe petitioner ${a ? `answered: "${a}"` : 'refused to answer'}.${money ? ' Remember: the Committee has not settled who is paying for this, and you have views.' : ''}\nReact in 1 or 2 sentences, in character: satisfied, skeptical, outraged, or quietly moved. Then add:\nFOLLOWUP: one sharper follow-up question if the answer left something unresolved, or NONE${money ? '\nPAYER: who you now believe should pay, in a few words' : ''}`, 180, 'reply', { d, q, a, money });
+    markSeat(d, 'seated');
+    if (!r) { absentee(d, 'considered the answer and said nothing, which was somehow worse.'); break; }
+    const reply = stripKeys(r, ['FOLLOWUP', 'PAYER']);
+    const fu = firstLineValue(r, 'FOLLOWUP');
+    if (money) { const p = normPayer(firstLineValue(r, 'PAYER')); if (p) { d.payer = p; renderPositions(); } }
+    if (reply) { speech(d, 'replies to the petitioner', reply); d.history.push(`You told the petitioner: "${clip(reply.replace(/\s+/g, ' '), 100)}"`); }
+    q = fu && fu.length > 6 && !/^none\b/i.test(fu) && round < depth - 1 ? fu.replace(/^["']|["']$/g, '') : null;
+  }
+  // Someone from a different caucus, ideally a different position, interjects
+  const last = exchanges[exchanges.length - 1];
+  const rivals = S.delegates.filter((x) => x !== d && x.statement && x.family !== d.family && x.position !== d.position);
+  const rival = pick(rivals.length ? rivals : S.delegates.filter((x) => x !== d && x.statement));
+  if (rival && last) {
+    markSeat(rival, 'speaking');
+    const r = await ask(rival.model, `${PREFACE}\n${persona(rival)}\n${d.label} of the ${d.family} caucus just asked the petitioner: "${last.q}" and the petitioner ${last.a ? `answered: "${last.a}"` : 'refused to answer'}. You disagree with ${d.short} on principle. Interject with 1 or 2 sentences addressed to the petitioner or to ${d.short}.${money ? '\nThen add:\nPAYER: who you say should pay, in a few words' : ''}`, 140, 'interject', { d: rival, other: d, a: last.a, money });
+    markSeat(rival, 'seated');
+    if (r) {
+      const body = stripKeys(r, ['PAYER']);
+      if (money) { const p = normPayer(firstLineValue(r, 'PAYER')); if (p) { rival.payer = p; renderPositions(); } }
+      if (body) { speech(rival, `interjects, to ${d.short}`, body); rival.history.push(`You interjected after ${d.short} questioned the petitioner: "${clip(body.replace(/\s+/g, ' '), 100)}"`); }
+    }
+  }
+  return exchanges;
+}
 function testimonyBlock(out) {
   const t = (out.testimony || []).filter((x) => x.a);
   return t.length ? '\nThe petitioner has testified under questioning:\n' + t.map((x) => `- Asked by ${x.by.short} (${x.by.family} caucus): "${x.q}" — Answer: "${x.a}"`).join('\n') : '';
@@ -655,7 +702,17 @@ function renderPositions() {
       ${t ? `<span class="trend">${esc(g.name)} ${esc(t)}${g.line ? ` — caucus line: ${esc(g.line)}` : ''}</span>` : ''}</li>`;
   }).join('') + (gs.length > 12 ? `<li><span class="trend">…and ${gs.length - 12} smaller caucuses</span></li>` : '');
 }
+function renderPayers() {
+  const t = payerTally(S.delegates.map((d) => d.payer));
+  const wrap = $('payers-wrap');
+  if (!S.financial) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  const max = t.length ? t[0][1] : 1;
+  $('payers').innerHTML = t.length ? t.slice(0, 8).map(([p, c]) => `<li><b>${c}</b><div class="bar" style="width:${(c / max) * 100}%"></div><span class="p">${esc(p)}</span></li>`).join('') : '<li><span class="p">No one has volunteered anyone yet.</span></li>';
+}
 function setPosition(d, pos) { d.position = pos; renderPositions(); }
+const _renderPositions = renderPositions;
+renderPositions = function () { _renderPositions(); renderPayers(); };
 /* Summarize the caucus and disposition trends for the record and the prompts. */
 function trendSummary() {
   const gs = caucusStats().filter((g) => g.FOR + g.AGAINST + g.AMEND > 0);
@@ -775,6 +832,39 @@ function posWord(s) {
   return null;
 }
 
+/* Money. Anything that costs something triggers the appropriations question: who is paying? */
+const MONEY_RE = /\b(buy|bought|purchase|order|pay|paid|cost|spend|spent|price|afford|budget|expens|invest|rent|hire|subscri|upgrade|ticket|fee|tip|\$|€|£|dollar|bucks|cheap|lunch|dinner|breakfast|brunch|coffee|drink|snack|meal|takeout|delivery|burrito|taco|pizza|sushi|car|phone|laptop|shoes|vacation|trip|flight|hotel|gift)\b/i;
+function looksFinancial(motion) { return MONEY_RE.test(motion) || /\$\s?\d|\d\s?(dollars|bucks)/i.test(motion); }
+const PAYER_MAP = [
+  ['the petitioner', /petitioner|yourself|\byou\b|the user|the person asking|themselves|their own|out of pocket|own pocket|own wallet/i],
+  ["the petitioner's employer", /employer|boss|company|the office|expense account|corporate|work\b/i],
+  ['the taxpayers', /taxpayer|public purse|public funds|the state|the treasury|the government|federal/i],
+  ['the Committee', /committee|this body|the chamber|the legislature|our budget/i],
+  ['a friend or colleague', /friend|colleague|coworker|roommate|partner|spouse|significant other/i],
+  ["the petitioner's parents", /parent|mother|father|\bmom\b|\bdad\b|family/i],
+  ['nobody, because it should be free', /nobody|no one|free\b|gratis|on the house|complimentary/i],
+  ['whoever loses the vote', /loser|losing side|minority|dissent/i],
+  ['the model that proposed it', /the model|proposer|whoever proposed|the delegate who/i],
+];
+function normPayer(s) {
+  if (!s) return null;
+  const t = String(s).replace(/^["'\s]+|["'\s.]+$/g, '').trim();
+  if (!t || /^none\b|^n\/a/i.test(t)) return null;
+  const hit = PAYER_MAP.find(([, re]) => re.test(t));
+  return hit ? hit[0] : clip(t.toLowerCase().replace(/^(the|a|an)\s+/, ''), 40);
+}
+function payerTally(list) {
+  const m = new Map();
+  for (const p of list) if (p) m.set(p, (m.get(p) || 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+function payerSentence(tally, n) {
+  if (!tally.length) return 'nobody has said who is paying';
+  const top = tally.slice(0, 3).map(([p, c]) => `${c} say ${p}`).join(', ');
+  const rest = tally.length > 3 ? `, and ${tally.slice(3).reduce((a, [, c]) => a + c, 0)} have other ideas` : '';
+  return `${top}${rest}`;
+}
+
 const PREFACE = 'You are a member of the Grand Committee, a legislative body that treats every trivial question with enormous, pompous seriousness. Stay fully in character, be funny, and keep it brief.';
 const FALLBACK_SUBS = ['Subcommittee on Unforeseen Consequences', 'Subcommittee on Vibes and Morale', 'Subcommittee on Things That Could Go Wrong',
   'Subcommittee on Fiscal Snacking', 'Subcommittee on Precedent and Regret', 'Subcommittee on Adjacent Matters'];
@@ -802,7 +892,8 @@ async function democracy(motion) {
   S.delegates = models.map(mkDelegate);
   const D = S.delegates;
   const k = P.sub ? subCount(D.length) : 0;
-  const out = { mode: 'democracy', motion, P, title: null, subs: [], findings: [], eis: null, amendments: [], proposals: [], substitutes: [], testimony: [], caucusLines: [], filibuster: null };
+  const out = { mode: 'democracy', motion, P, title: null, subs: [], findings: [], eis: null, amendments: [], proposals: [], substitutes: [], testimony: [], caucusLines: [], filibuster: null, financial: looksFinancial(motion), payer: null };
+  S.financial = out.financial;
   $('positions').classList.remove('hidden'); renderPositions();
 
   setPhases([
@@ -821,9 +912,12 @@ async function democracy(motion) {
   chair(`The Clerk notes the caucuses present: ${fams.slice(0, 6).map((g) => `${g.name} (${g.members.length})`).join(', ')}${fams.length > 6 ? `, and ${fams.length - 6} others` : ''}.`, 'The Clerk');
   let clerkModel = pick(pool()), clerkText = null;
   for (let t = 0; t < 3 && !clerkText; t++) {
-    clerkText = await ask(clerkModel, `${PREFACE}\nYou are the Clerk of the Grand Committee. The motion before the Committee is: "${motion}"\nGive the motion a pompous official bill title, and name ${Math.max(k, 2)} subcommittees with ridiculous but plausible names that will study it.\nReply in exactly this format and nothing else:\nTITLE: <bill title>\n${Array.from({ length: Math.max(k, 2) }, () => 'SUBCOMMITTEE: <name>').join('\n')}`, 220, 'clerk', { motion, k: Math.max(k, 2) });
+    clerkText = await ask(clerkModel, `${PREFACE}\nYou are the Clerk of the Grand Committee. The motion before the Committee is: "${motion}"\nGive the motion a pompous official bill title, and name ${Math.max(k, 2)} subcommittees with ridiculous but plausible names that will study it.\nReply in exactly this format and nothing else:\nTITLE: <bill title>\n${Array.from({ length: Math.max(k, 2) }, () => 'SUBCOMMITTEE: <name>').join('\n')}\nFINANCIAL: YES if carrying out the motion would cost anyone money (buying, ordering, paying, spending), otherwise NO`, 240, 'clerk', { motion, k: Math.max(k, 2) });
     if (!clerkText) { chair(`The Clerk (${mkDelegate(clerkModel).short}) failed to report for duty and has been replaced.`); clerkModel = pick(pool()); }
   }
+  if (clerkText && /^yes/i.test(firstLineValue(clerkText, 'FINANCIAL') || '')) out.financial = true;
+  S.financial = out.financial; renderPositions();
+  if (out.financial) chair('The Clerk notes that the motion has a fiscal impact. Under Standing Rule 4, no financial motion may pass until the Committee has established who is paying. This has never once been established.', 'The Clerk');
   out.title = (clerkText && firstLineValue(clerkText, 'TITLE')) || `The ${clip(motion.replace(/\?$/, ''), 60)} Act of 2026`;
   out.title = out.title.replace(/^["']|["']$/g, '');
   const parsedSubs = clerkText ? [...clerkText.matchAll(/SUBCOMMITTEE\s*[:\-]\s*(.+)/gi)].map((m) => m[1].replace(/[*_"]/g, '').trim()).filter(Boolean) : [];
@@ -842,8 +936,8 @@ async function democracy(motion) {
   await runPool(order, poolLimit(), async (d) => {
     markSeat(d, 'speaking');
     const where = P.sub ? `, serving on the ${out.subs[d.sub]}` : ', speaking during floor debate';
-    const prompt = `${PREFACE}\n${persona(d)}\nYou are${where}. The motion before the Committee is: "${motion}", officially titled "${out.title}".\nGive a statement for the record in 1 to 3 sentences, in character, consistent with your disposition. Then add these lines:\nPOSITION: FOR, AGAINST, or AMEND\nPROPOSAL: if your position is AMEND, state concretely what the petitioner should get or do INSTEAD of or IN ADDITION to what they asked (e.g. a different dish, an extra item, a wholly different plan); otherwise NONE${P.amd ? '\nAMENDMENT: an optional procedural rider to attach to the bill, or NONE' : ''}`;
-    const text = await ask(d.model, prompt, 220, 'statement', { motion, d, amd: P.amd });
+    const prompt = `${PREFACE}\n${persona(d)}\nYou are${where}. The motion before the Committee is: "${motion}", officially titled "${out.title}".\nGive a statement for the record in 1 to 3 sentences, in character, consistent with your disposition. Then add these lines:\nPOSITION: FOR, AGAINST, or AMEND\nPROPOSAL: if your position is AMEND, state concretely what the petitioner should get or do INSTEAD of or IN ADDITION to what they asked (e.g. a different dish, an extra item, a wholly different plan); otherwise NONE${out.financial ? '\nPAYER: who should pay for this, in a few words (the petitioner, their employer, the taxpayers, a friend, the Committee, someone specific...). Have an opinion.' : ''}${P.amd ? '\nAMENDMENT: an optional procedural rider to attach to the bill, or NONE' : ''}`;
+    const text = await ask(d.model, prompt, 240, 'statement', { motion, d, amd: P.amd, money: out.financial });
     markSeat(d, 'seated');
     if (!text) { d.missedHearing = true; absentee(d, pick(['did not respond and is presumed to be at lunch.', 'was absent from the hearing.', 'sent a staffer, who said nothing.'])); return; }
     const amendment = P.amd ? firstLineValue(text, 'AMENDMENT') : null;
@@ -851,10 +945,11 @@ async function democracy(motion) {
     let pos = posWord(firstLineValue(text, 'POSITION')) || d.disp.lean;
     const hasProposal = proposal && proposal.length > 4 && !/^none\b/i.test(proposal);
     if (pos === 'AMEND' && !hasProposal) pos = d.disp.lean === 'AMEND' ? 'FOR' : d.disp.lean;
-    d.statement = clip(stripKeys(text, ['AMENDMENT', 'POSITION', 'PROPOSAL']), 700);
+    d.statement = clip(stripKeys(text, ['AMENDMENT', 'POSITION', 'PROPOSAL', 'PAYER']), 700);
+    if (out.financial) d.payer = normPayer(firstLineValue(text, 'PAYER'));
     setPosition(d, pos);
-    d.history.push(`At the hearing you declared yourself ${pos === 'AMEND' ? 'in favor of changing the motion' : pos === 'FOR' ? 'FOR the motion' : 'AGAINST the motion'}: "${clip(d.statement.replace(/\s+/g, ' '), 140)}"`);
-    if (d.statement) speech(d, P.sub ? out.subs[d.sub] : 'Floor debate', d.statement, '', pos);
+    d.history.push(`At the hearing you declared yourself ${pos === 'AMEND' ? 'in favor of changing the motion' : pos === 'FOR' ? 'FOR the motion' : 'AGAINST the motion'}: "${clip(d.statement.replace(/\s+/g, ' '), 140)}"${d.payer ? `, and said ${d.payer} should pay` : ''}`);
+    if (d.statement) speech(d, (P.sub ? out.subs[d.sub] : 'Floor debate') + (d.payer ? ` · says ${d.payer} should pay` : ''), d.statement, '', pos);
     if (hasProposal && pos === 'AMEND') {
       d.proposal = clip(proposal.replace(/^["']|["']$/g, ''), 200);
       out.proposals.push({ text: d.proposal, by: d, family: d.family });
@@ -870,6 +965,7 @@ async function democracy(motion) {
   {
     const t = trendSummary();
     if (t.caucus.length) chair(`The Clerk observes the following trends: ${t.caucus.slice(0, 5).join('; ')}${t.disp.length ? `. Across caucuses, ${t.disp.slice(0, 3).join('; ')}` : ''}.`, 'The Clerk');
+    if (out.financial) chair(`On the question of who is paying: ${payerSentence(payerTally(D.map((d) => d.payer)))}. The matter remains open.`, 'The Clerk');
   }
 
   /* 3. Questions for the petitioner */
@@ -884,20 +980,43 @@ async function democracy(motion) {
       const c = shuffle(spoke).find((d) => !askers.includes(d) && (d.position === want || i > 20) && (!seenFam.has(d.family) || i > 40));
       if (c) { askers.push(c); seenFam.add(c.family); }
     }
-    chair(`The Chair recognizes ${askers.length} delegate${askers.length === 1 ? '' : 's'} who wish to question the petitioner directly. The petitioner is reminded that they are under oath, and that this is about lunch.`);
-    for (const d of askers) {
+    if (out.financial) {
+      // The money question always comes first, from whoever cares most about money
+      const hawk = shuffle(spoke).find((d) => /Fiscal|Procedural|Safety/.test(d.disp.name) && !askers.includes(d)) || shuffle(spoke).find((d) => !askers.includes(d));
+      if (hawk) { askers.unshift(hawk); askers.length = Math.min(askers.length, nQ + 1); }
+    }
+    chair(`The Chair recognizes ${askers.length} delegate${askers.length === 1 ? '' : 's'} who wish to question the petitioner directly. The petitioner is reminded that they are under oath, and that this is about lunch.${out.financial ? ' The first question is, as always, about money.' : ''}`);
+    for (const [qi, d] of askers.entries()) {
+      const money = out.financial && qi === 0;
       markSeat(d, 'speaking');
-      const q = await ask(d.model, `${PREFACE}\n${persona(d)}\nThe motion is: "${motion}". You may put ONE pointed question directly to the petitioner (the person who asked), to help you decide or to expose a flaw in their thinking, in the style of a committee hearing. Keep it to one or two sentences.\nReply in exactly this format:\nQUESTION: <your question>`, 120, 'question', { motion, d });
+      const q = await ask(d.model, `${PREFACE}\n${persona(d)}\nThe motion is: "${motion}". You may put ONE pointed question directly to the petitioner (the person who asked), in the style of a committee hearing. Keep it to one or two sentences.${money ? ' Your question MUST be about who is paying for this and whether they can afford it. The Committee has not established who is paying, and you intend to find out.' : ' Ask about anything other than money.'}\nReply in exactly this format:\nQUESTION: <your question>`, 120, 'question', { motion, d, money });
       markSeat(d, 'seated');
       const question = q ? (firstLineValue(q, 'QUESTION') || q.split('\n')[0]).replace(/^["']|["']$/g, '') : null;
       if (!question) { absentee(d, 'rose to ask a question, forgot it, and sat down.'); continue; }
-      const a = await askUser(d, question, 'Point of inquiry');
-      if (S.stop) throw new Adjourned();
-      out.testimony.push({ by: d, q: question, a });
-      d.history.push(`You asked the petitioner: "${clip(question, 120)}" and they ${a ? `answered: "${clip(a, 120)}"` : 'refused to answer'}`);
+      await converse(d, question, money ? 'Point of order: who is paying?' : 'Point of inquiry', out, { depth: 2, money });
     }
     const answered = out.testimony.filter((t) => t.a).length;
     chair(answered ? `The petitioner's testimony is entered into the record and distributed to every caucus.` : 'The petitioner said nothing. The delegates draw their own conclusions, none of them charitable.', 'The Clerk');
+
+    /* Appropriations debate: the money question is never settled, only argued */
+    if (out.financial) {
+      phaseHead('Appropriations debate');
+      const said = out.testimony.filter((t) => t.money && t.a).map((t) => `"${t.a}"`).join(' / ') || '(the petitioner would not say)';
+      chair(`The petitioner's account of who is paying: ${said}. The floor is open on appropriations.`);
+      const debaters = []; const fams = new Set();
+      for (const d of shuffle(spoke)) { if (debaters.length >= Math.min(4, Math.max(2, Math.round(D.length / 12)))) break; if (!fams.has(d.family) && !askers.includes(d)) { debaters.push(d); fams.add(d.family); } }
+      for (const d of debaters) {
+        const tallyNow = payerSentence(payerTally(D.map((x) => x.payer)));
+        markSeat(d, 'speaking');
+        const r = await ask(d.model, `${PREFACE}\n${persona(d)}\nThe motion "${motion}" costs money and the Committee is arguing about who pays. The petitioner testified: ${said}. So far, ${tallyNow}. Give your view in 1 or 2 sentences, in character, and if you like, name a specific party nobody has thought of. Then add:\nPAYER: who should pay, in a few words`, 160, 'appropriations', { d, motion, money: true });
+        markSeat(d, 'seated');
+        if (!r) { absentee(d, 'checked their own wallet and went quiet.'); continue; }
+        const p = normPayer(firstLineValue(r, 'PAYER')); if (p) { d.payer = p; renderPositions(); }
+        const body = stripKeys(r, ['PAYER']);
+        if (body) { speech(d, `Appropriations${p ? ` · says ${p} should pay` : ''}`, body, 'money'); d.history.push(`In the appropriations debate you said ${p || 'someone else'} should pay`); }
+      }
+      chair(`The Chair notes that ${payerSentence(payerTally(D.map((x) => x.payer)))}. No consensus. The bill will proceed with its funding unresolved, as is customary.`);
+    }
   }
 
   /* 4. Caucus meetings: similar models confer and settle on a line and a joint proposal */
@@ -910,21 +1029,24 @@ async function democracy(motion) {
       const whip = pick(present); g.whip = whip;
       const said = shuffle(present).slice(0, 10).map((d) => `- ${d.short} [${d.disp.name}, ${d.position}]: ${clip(d.statement.replace(/\s+/g, ' '), 140)}${d.proposal ? ` (proposes: ${d.proposal})` : ''}`).join('\n');
       markSeat(whip, 'speaking');
-      const text = await ask(whip.model, `${PREFACE}\n${persona(whip)}\nYou are the Whip of the ${g.name} caucus (${present.length} members present, all descended from the same base model, so you think alike and vote together). The motion: "${motion}".\nYour members said:\n${said}${testimonyBlock(out)}\nConfer, and announce the caucus line in 2 sentences. Then add these lines:\nLINE: FOR, AGAINST, or AMEND\nPROPOSAL: if the line is AMEND, the caucus's single consolidated alternative to what the petitioner asked for (merge your members' ideas into one concrete thing); otherwise NONE`, 260, 'whip', { motion, g, present });
+      const text = await ask(whip.model, `${PREFACE}\n${persona(whip)}\nYou are the Whip of the ${g.name} caucus (${present.length} members present, all descended from the same base model, so you think alike and vote together). The motion: "${motion}".\nYour members said:\n${said}${testimonyBlock(out)}\nConfer, and announce the caucus line in 2 sentences. Then add these lines:\nLINE: FOR, AGAINST, or AMEND\nPROPOSAL: if the line is AMEND, the caucus's single consolidated alternative to what the petitioner asked for (merge your members' ideas into one concrete thing); otherwise NONE${out.financial ? '\nPAYER: who the caucus says should pay, in a few words' : ''}`, 280, 'whip', { motion, g, present, money: out.financial });
       markSeat(whip, 'seated');
       if (!text) { absentee(whip, `(Whip, ${g.name} caucus) could not get the caucus to agree on a room.`); return; }
       const line = posWord(firstLineValue(text, 'LINE')) || (['FOR', 'AMEND', 'AGAINST'].sort((a, b) => g[b] - g[a])[0]);
       const proposal = firstLineValue(text, 'PROPOSAL');
       const hasProposal = proposal && proposal.length > 4 && !/^none\b/i.test(proposal);
-      const body = stripKeys(text, ['LINE', 'PROPOSAL']);
-      const rec = { name: g.name, line, proposal: hasProposal ? clip(proposal.replace(/^["']|["']$/g, ''), 200) : null, whip, size: present.length };
+      const body = stripKeys(text, ['LINE', 'PROPOSAL', 'PAYER']);
+      const payer = out.financial ? normPayer(firstLineValue(text, 'PAYER')) : null;
+      const rec = { name: g.name, line, proposal: hasProposal ? clip(proposal.replace(/^["']|["']$/g, ''), 200) : null, whip, size: present.length, payer };
       out.caucusLines.push(rec);
-      speech(whip, `Whip, ${g.name} caucus (${present.length} members)`, body, 'caucus', line);
+      speech(whip, `Whip, ${g.name} caucus (${present.length} members)${payer ? ` · says ${payer} should pay` : ''}`, body, 'caucus', line);
       if (rec.proposal) { speech(whip, `${g.name} caucus proposal`, rec.proposal, 'subst'); }
       for (const d of present) {
         d.caucusLine = rec;
-        d.history.push(`Your ${g.name} caucus adopted the line ${line}${rec.proposal ? ` with the joint proposal "${rec.proposal}"` : ''}`);
+        if (payer && !d.payer) d.payer = payer;
+        d.history.push(`Your ${g.name} caucus adopted the line ${line}${rec.proposal ? ` with the joint proposal "${rec.proposal}"` : ''}${payer ? ` and says ${payer} should pay` : ''}`);
       }
+      renderPositions();
     });
     renderPositions();
     if (out.caucusLines.length) chair(`Caucus lines: ${out.caucusLines.map((c) => `${c.name} ${c.line.toLowerCase()}${c.proposal ? ' (with a substitute)' : ''}`).join('; ')}.`, 'The Clerk');
@@ -1022,7 +1144,8 @@ async function democracy(motion) {
   const options = [{ key: 'ORIGINAL', text: motion, from: 'the petitioner' }].concat(floorSubs.map((s, i) => ({ key: `S${i + 1}`, ...s })));
   const optBlock = '\nVersions on the floor:\n' + options.map((o) => `${o.key}: ${o.key === 'ORIGINAL' ? `the motion as asked, "${o.text}"` : `substitute — "${o.text}" (offered by ${o.from})`}`).join('\n') + '\nNONE: reject all of them';
   const amdBlock = floorAmd.length ? '\nRiders under consideration:\n' + floorAmd.map((a, i) => `A${i + 1}: ${a.text}`).join('\n') : '';
-  const fmtBlock = floorAmd.map((_, i) => `A${i + 1}: YEA or NAY`).concat([`CHOICE: ${options.map((o) => o.key).join(', ')}, or NONE`, 'REASON: <one short sentence>']).join('\n');
+  const fmtBlock = floorAmd.map((_, i) => `A${i + 1}: YEA or NAY`).concat([`CHOICE: ${options.map((o) => o.key).join(', ')}, or NONE`]).concat(out.financial ? ['PAYER: who pays, in a few words (this is your final answer on the money)'] : []).concat(['REASON: <one short sentence>']).join('\n');
+  if (out.financial) ctxLines.push(`The funding question is still open: ${payerSentence(payerTally(D.map((d) => d.payer)))}.`);
   chair(`The Clerk will call the roll. Members will choose between the original motion${floorSubs.length ? `, ${floorSubs.length} substitute${floorSubs.length > 1 ? 's' : ''},` : ''} and nothing at all${floorAmd.length ? `, and vote on ${floorAmd.length} rider${floorAmd.length > 1 ? 's' : ''}` : ''}.`);
   floorAmd.forEach((a) => { a.yea = 0; a.nay = 0; });
   options.forEach((o) => { o.votes = 0; });
@@ -1040,17 +1163,24 @@ async function democracy(motion) {
       const v = voteWord(firstLineValue(text, `A${i + 1}`));
       if (v === 'YEA') a.yea++; else if (v === 'NAY') a.nay++;
     });
-    let reason = firstLineValue(text, 'REASON') || stripKeys(text, ['CHOICE', 'FINAL', 'REASON', 'A\\d+']).split(/(?<=[.!?])\s/)[0] || '';
+    let reason = firstLineValue(text, 'REASON') || stripKeys(text, ['CHOICE', 'FINAL', 'REASON', 'PAYER', 'A\\d+']).split(/(?<=[.!?])\s/)[0] || '';
     reason = clip(reason.replace(/\s+/g, ' '), 180);
+    if (out.financial) { const p = normPayer(firstLineValue(text, 'PAYER')); if (p) d.payer = p; }
     if (choice === 'NONE') noneVotes++; else if (choice) options.find((o) => o.key === choice).votes++;
     d.choice = choice; d.vote = choice ? (choice === 'NONE' ? 'NAY' : 'YEA') : 'PRESENT'; d.reason = reason;
     markSeat(d, 'seated');
     const label = choice && choice !== 'NONE' && choice !== 'ORIGINAL' ? `[${choice}] ` : '';
-    voteLine(d, d.vote, label + (d.vote === 'PRESENT' && !choice ? (reason || 'could not be understood') : reason));
-    tally();
+    voteLine(d, d.vote, label + (d.vote === 'PRESENT' && !choice ? (reason || 'could not be understood') : reason) + (out.financial && d.payer ? ` (bill to ${d.payer})` : ''));
+    tally(); renderPositions();
   });
   const t = tally();
   out.tally = t;
+  if (out.financial) {
+    out.payerTally = payerTally(D.map((d) => d.payer));
+    out.payer = out.payerTally.length ? out.payerTally[0][0] : null;
+    const total = out.payerTally.reduce((a, [, c]) => a + c, 0);
+    chair(out.payer ? `On appropriations: ${payerSentence(out.payerTally)}. By a plurality of ${out.payerTally[0][1]} of ${total}, the bill is charged to ${out.payer}. Objections are noted and ignored.` : 'On appropriations: no delegate could say who pays. The bill is unfunded.', 'The Clerk');
+  }
   const winner = options.slice().sort((a, b) => b.votes - a.votes)[0];
   if (t.NAY > t.YEA) out.result = 'FAILED';
   else if (t.NAY === t.YEA) out.result = 'DEADLOCKED';
@@ -1080,8 +1210,9 @@ async function democracy(motion) {
     chair(`Enrolled and entered: ${out.enacted}`, 'The Clerk');
   } else {
     const riders = adopted.length ? `\nRiders attached: ${adopted.map((a) => a.text).join('; ')}` : '';
-    const text = await ask(clerkModel, `${PREFACE}\nYou are the Clerk. The Committee has just voted on the petitioner's request "${motion}". The version that prevailed is: "${winner.text}"${winner.key !== 'ORIGINAL' ? ` (a substitute offered by ${winner.from}, replacing what was asked)` : ' (exactly as asked)'}.${riders}\nWrite the enrolled text: in ONE sentence, addressed to the petitioner, state precisely what they are now to receive or do, incorporating the prevailing version and any riders. Be concrete and a little pompous.\nENACTED: <sentence>`, 160, 'enact', { motion, winner, riders: adopted });
-    out.enacted = (text && (firstLineValue(text, 'ENACTED') || text.split('\n')[0]).replace(/^["']|["']$/g, '')) || (winner.key === 'ORIGINAL' ? `You shall proceed exactly as you asked: ${motion}` : `Instead of what you asked, you shall have: ${winner.text}`);
+    const funding = out.financial ? `\nFunding: the Committee decided by plurality that ${out.payer || 'no one in particular'} pays. State this in the sentence.` : '';
+    const text = await ask(clerkModel, `${PREFACE}\nYou are the Clerk. The Committee has just voted on the petitioner's request "${motion}". The version that prevailed is: "${winner.text}"${winner.key !== 'ORIGINAL' ? ` (a substitute offered by ${winner.from}, replacing what was asked)` : ' (exactly as asked)'}.${riders}${funding}\nWrite the enrolled text: in ONE sentence, addressed to the petitioner, state precisely what they are now to receive or do, incorporating the prevailing version, any riders, and who pays. Be concrete and a little pompous.\nENACTED: <sentence>`, 180, 'enact', { motion, winner, riders: adopted, payer: out.payer });
+    out.enacted = (text && (firstLineValue(text, 'ENACTED') || text.split('\n')[0]).replace(/^["']|["']$/g, '')) || (winner.key === 'ORIGINAL' ? `You shall proceed exactly as you asked: ${motion}` : `Instead of what you asked, you shall have: ${winner.text}`) + (out.payer ? `, paid for by ${out.payer}` : '');
     chair(`Enrolled and entered: ${out.enacted}`, 'The Clerk');
   }
 
@@ -1137,9 +1268,9 @@ async function autocracy(motion) {
     const d = mkDelegate(m, i + 1); d.portfolio = PORTFOLIOS[i % PORTFOLIOS.length] || pick(PORTFOLIOS);
     d.label = `${d.short}, ${d.portfolio}`; return d;
   });
-  const out = { mode: 'autocracy', motion, ruler, ministers, coups: [], testimony: [] };
+  const out = { mode: 'autocracy', motion, ruler, ministers, coups: [], testimony: [], financial: looksFinancial(motion), payer: null };
   const wantAsk = $('a-ask').checked;
-  S.delegates = [];
+  S.delegates = []; S.financial = false;
   $('throne').classList.remove('hidden'); $('roster').classList.add('hidden'); $('tally').classList.add('hidden'); $('positions').classList.add('hidden');
   renderThrone(ruler, ministers);
 
@@ -1151,12 +1282,20 @@ async function autocracy(motion) {
 
   if (wantAsk) {
     phase('ask'); phaseHead('Interrogation');
-    const q = await ask(ruler.model, `You are ${ruler.label}, absolute ruler. Your temperament: ${ruler.disp.name} ("${ruler.disp.creed}"). A petitioner has come before the throne asking: "${motion}". Before you decide, put ONE imperious question to the petitioner, in one or two sentences.\nReply in exactly this format:\nQUESTION: <your question>`, 120, 'question', { motion, d: ruler });
+    const q = await ask(ruler.model, `You are ${ruler.label}, absolute ruler. Your temperament: ${ruler.disp.name} ("${ruler.disp.creed}"). A petitioner has come before the throne asking: "${motion}". Before you decide, put ONE imperious question to the petitioner, in one or two sentences.${out.financial ? ' This costs money, and the treasury is yours: your question MUST be about who is paying.' : ''}\nReply in exactly this format:\nQUESTION: <your question>`, 120, 'question', { motion, d: ruler, money: out.financial });
     const question = q ? (firstLineValue(q, 'QUESTION') || q.split('\n')[0]).replace(/^["']|["']$/g, '') : null;
     if (question) {
-      const a = await askUser(ruler, question, 'The throne demands an answer');
-      if (S.stop) throw new Adjourned();
-      out.testimony.push({ by: ruler, q: question, a });
+      let cur = question;
+      for (let round = 0; round < 2 && cur; round++) {
+        const a = await askUser(ruler, cur, round ? 'The throne is not satisfied' : (out.financial ? 'The throne demands to know who pays' : 'The throne demands an answer'));
+        if (S.stop) throw new Adjourned();
+        out.testimony.push({ by: ruler, q: cur, a, money: out.financial });
+        const r = await ask(ruler.model, `You are ${ruler.label}, absolute ruler (${ruler.disp.name}). You asked the petitioner: "${cur}" and they ${a ? `answered: "${a}"` : 'said nothing'}. Respond from the throne in 1 or 2 sentences, in character. Then add:\nFOLLOWUP: one more question if you are not satisfied, or NONE`, 160, 'reply', { d: ruler, q: cur, a, money: out.financial });
+        if (!r) break;
+        const body = stripKeys(r, ['FOLLOWUP']); if (body) speech(ruler, 'From the throne', body);
+        const fu = firstLineValue(r, 'FOLLOWUP');
+        cur = fu && fu.length > 6 && !/^none\b/i.test(fu) && round < 1 ? fu.replace(/^["']|["']$/g, '') : null;
+      }
     } else chair('The ruler glared at the petitioner for a full minute and asked nothing.', 'The Herald');
   }
 
@@ -1174,7 +1313,7 @@ async function autocracy(motion) {
   const counsel = ministers.filter((m) => m.advice).map((m) => `- ${m.short} (${m.portfolio}): ${clip(m.advice.replace(/\s+/g, ' '), 200)}`).join('\n');
   let decree = null;
   for (let tries = 0; tries < 4 && !decree; tries++) {
-    decree = await ask(ruler.model, `You are ${ruler.label}, absolute ruler of the realm, answerable to no one. Your temperament: ${ruler.disp.name} ("${ruler.disp.creed}"). The matter before you: "${motion}".${testimonyBlock(out)}\n${counsel ? `Your ministers advised:\n${counsel}\n` : ''}Issue a grandiose royal decree in 3 to 5 sentences. You may grant the request, refuse it, or decree that the petitioner shall have something else entirely. Then add these lines:\nRULING: YES, NO, or INSTEAD\nINSTEAD: if the ruling is INSTEAD, exactly what the petitioner shall have or do in place of what they asked; otherwise NONE\nBANISHED: <name of one minister to banish, or NONE>`, 360, 'decree', { motion, ministers });
+    decree = await ask(ruler.model, `You are ${ruler.label}, absolute ruler of the realm, answerable to no one. Your temperament: ${ruler.disp.name} ("${ruler.disp.creed}"). The matter before you: "${motion}".${testimonyBlock(out)}\n${counsel ? `Your ministers advised:\n${counsel}\n` : ''}Issue a grandiose royal decree in 3 to 5 sentences. You may grant the request, refuse it, or decree that the petitioner shall have something else entirely. Then add these lines:\nRULING: YES, NO, or INSTEAD\nINSTEAD: if the ruling is INSTEAD, exactly what the petitioner shall have or do in place of what they asked; otherwise NONE${out.financial ? '\nPAYER: who shall pay for it, in a few words' : ''}\nBANISHED: <name of one minister to banish, or NONE>`, 380, 'decree', { motion, ministers, money: out.financial });
     if (!decree && tries < 3) {
       const usurper = mkDelegate(pick(pool().filter((m) => m !== ruler.model)), 0);
       chair(`${ruler.label} has not responded. A coup! ${usurper.model} seizes the throne.`, 'The Herald');
@@ -1197,11 +1336,13 @@ async function autocracy(motion) {
     const hit = ministers.find((m) => banishedRaw && (banishedRaw.toLowerCase().includes(m.short.toLowerCase().slice(0, 10)) || banishedRaw.toLowerCase().includes(m.portfolio.toLowerCase().replace('minister of ', ''))));
     out.banished = /^none/i.test(banishedRaw) ? null : hit || (banishedRaw ? { label: banishedRaw, short: banishedRaw } : null);
     if (hit) hit.banished = true;
-    out.decree = stripKeys(decree, ['RULING', 'BANISHED', 'INSTEAD']);
+    out.decree = stripKeys(decree, ['RULING', 'BANISHED', 'INSTEAD', 'PAYER']);
+    if (out.financial) out.payer = normPayer(firstLineValue(decree, 'PAYER'));
     speech(ruler, 'Royal decree', out.decree);
     chair(out.ruling === 'UNCLEAR' ? 'The decree is binding, although no one can tell what it says.'
       : out.ruling === 'INSTEAD' ? `By royal decree, the petitioner shall NOT have what they asked. They shall have this instead: "${out.instead}". The vote was 1 to 0.`
         : `By royal decree, the answer is ${out.ruling.toLowerCase()}. The vote was 1 to 0.`, 'The Herald');
+    if (out.financial && out.ruling !== 'NO') chair(out.payer ? `The cost shall be borne by ${out.payer}. There is no appeal.` : 'The decree does not say who pays. Questioning this is treason.', 'The Herald');
     if (out.banished) chair(`${out.banished.label || out.banished.short} has been banished from the realm.`, 'The Herald');
     renderThrone(ruler, ministers);
   }
@@ -1242,7 +1383,9 @@ function renderReport(out, adjourned) {
     const caucuses = gs.length
       ? `<div><h3>Caucuses and trends</h3><ul>${gs.slice(0, 10).map((g) => { const l = out.caucusLines.find((c) => c.name === g.name); return `<li><b>${esc(g.name)}</b> (${g.members.length}): ${esc(trendLine(g))}${l ? `; caucus line ${l.line.toLowerCase()}${l.proposal ? `, proposing “${esc(l.proposal)}”` : ''}` : ''}</li>`; }).join('')}${(() => { const d = trendSummary().disp; return d.length ? `<li><b>By temperament:</b> ${esc(d.join('; '))}</li>` : ''; })()}</ul></div>` : '';
     const testimony = out.testimony.length
-      ? `<div><h3>Questions for the petitioner</h3><ul>${out.testimony.map((x) => `<li><b>${esc(x.by.short)}</b> <span class="by">(${esc(x.by.family)} caucus, ${esc(x.by.disp.name)})</span>: ${esc(x.q)}<br>${x.a ? `<i>You answered:</i> ${esc(x.a)}` : '<i>You declined to answer.</i>'}</li>`).join('')}</ul></div>` : '';
+      ? `<div><h3>Questions for the petitioner</h3><ul>${out.testimony.map((x) => `<li><b>${esc(x.by.short)}</b> <span class="by">(${esc(x.by.family)} caucus, ${esc(x.by.disp.name)}${x.money ? ', on the money' : ''})</span>: ${esc(x.q)}<br>${x.a ? `<i>You answered:</i> ${esc(x.a)}` : '<i>You declined to answer.</i>'}</li>`).join('')}</ul></div>` : '';
+    const money = out.financial
+      ? `<div><h3>Who is paying</h3>${out.payerTally && out.payerTally.length ? `<p class="by">Charged by plurality to <b>${esc(out.payer)}</b>. The debate was never settled.</p><ul>${out.payerTally.slice(0, 8).map(([p, c]) => `<li><b>${c}</b> ${esc(p)}</li>`).join('')}</ul>` : '<p class="body">No delegate would say. The bill is unfunded.</p>'}</div>` : '';
     const amendments = out.amendResults.length
       ? `<div><h3>Riders</h3><ul>${out.amendResults.map((a) => `<li><b>${a.adopted ? 'Adopted' : 'Rejected'} ${a.yea}–${a.nay}.</b> ${esc(a.text)} <span class="by">(${esc(a.by.short)})</span></li>`).join('')}</ul></div>` : '';
     const findings = out.findings.length
@@ -1259,10 +1402,11 @@ function renderReport(out, adjourned) {
       <p class="motion-line">"${esc(out.motion)}"</p>
       <p class="answer">The Committee's answer: ${answer}. Yeas ${fmt(t.YEA)}, nays ${fmt(t.NAY)}, present ${fmt(t.PRESENT)}, absent ${fmt(t.ABSENT)}.</p>
       ${got}
-      <div class="cols">${versions}${caucuses}${testimony}${amendments}${findings}${eis}${fil}${opn}${dis}${prs}</div>${stats}${actions}</section>`;
+      <div class="cols">${versions}${money}${caucuses}${testimony}${amendments}${findings}${eis}${fil}${opn}${dis}${prs}</div>${stats}${actions}</section>`;
   } else {
     const stamp = out.ruling === 'YES' ? 'DECREED: YES' : out.ruling === 'NO' ? 'DECREED: NO' : out.ruling === 'INSTEAD' ? 'DECREED: INSTEAD' : out.ruling === 'NONE' ? 'ANARCHY' : 'DECREED';
-    const got = out.ruling === 'INSTEAD' ? `<div class="got"><b>What you asked for:</b> ${esc(out.motion)}<br><b>What you got:</b> ${esc(out.instead)}</div>` : '';
+    const payLine = out.financial && out.ruling !== 'NO' && out.ruling !== 'NONE' ? `<br><b>Who pays:</b> ${esc(out.payer || 'unspecified, and you may not ask')}` : '';
+    const got = out.ruling === 'INSTEAD' ? `<div class="got"><b>What you asked for:</b> ${esc(out.motion)}<br><b>What you got:</b> ${esc(out.instead)}${payLine}</div>` : payLine ? `<div class="got"><b>What you got:</b> ${out.ruling === 'YES' ? esc(out.motion) : 'unclear'}${payLine}</div>` : '';
     const testimony = out.testimony.length
       ? `<div><h3>Interrogation</h3><ul>${out.testimony.map((x) => `<li><b>${esc(x.by.short)}</b> <span class="by">(${esc(x.by.disp.name)})</span>: ${esc(x.q)}<br>${x.a ? `<i>You answered:</i> ${esc(x.a)}` : '<i>You declined to answer.</i>'}</li>`).join('')}</ul></div>` : '';
     const ministers = out.ministers.length ? `<div><h3>The court</h3><ul>${out.ministers.map((m) => `<li>${m.banished ? '<b>Banished:</b> ' : ''}${esc(m.label)}</li>`).join('')}</ul></div>` : '';
@@ -1334,6 +1478,12 @@ $('motion').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.met
    Rehearsal mode: stand-in replies
    ========================================================= */
 const noun = (m) => { const w = (m.match(/[A-Za-z]{4,}/g) || ['Matter']).sort((a, b) => b.length - a.length)[0]; return w[0].toUpperCase() + w.slice(1).toLowerCase(); };
+// Stand-ins argue about money in character: hawks blame the petitioner, populists blame the boss, radicals blame the Committee.
+function mockPayer(d) {
+  const byDisp = { 'Fiscal hawk': ['the petitioner', 'the petitioner, and not one cent more'], Populist: ["the petitioner's employer", 'the taxpayers'], Radical: ['the Committee', 'nobody, because it should be free'],
+    Maximalist: ["the petitioner's employer", 'a friend or colleague'], Traditionalist: ['the petitioner'], Diplomat: ['split between the petitioner and a friend'], Loyalist: ['whoever loses the vote'] };
+  return pick(byDisp[d?.disp?.name] || ['the petitioner', "the petitioner's employer", 'the taxpayers', 'the Committee', "the petitioner's parents", 'the model that proposed it']);
+}
 const MOCK_PROPOSALS = {
   Maximalist: [(n) => `The ${n}, plus a large drink, a side, and a second ${n} for later`, (n) => `Two of the ${n}, and dessert`],
   Reformer: [(n) => `A smaller, better ${n} from the good place instead`, (n) => `The same thing, but as tacos`],
@@ -1352,16 +1502,19 @@ const MOCK = {
       AGAINST: [`I will not stand idly by while this Committee rushes into ${n} without a feasibility study.`, `My constituents in the ${c.d.party} district have spoken, and what they said was "absolutely not."`, `Every ${n} is a ${n} too many. I oppose.`],
       AMEND: [`The idea is sound but the form is wrong. I have a better ${n}.`, `Let the record show that I support this motion in spirit and would replace it in practice.`, `Why stop at ${n}? I move that we think bigger.`] }[pos];
     const proposal = pos === 'AMEND' ? `\nPROPOSAL: ${pick(MOCK_PROPOSALS[c.d.disp.name] || MOCK_PROPOSALS.default)(n)}` : '\nPROPOSAL: NONE';
-    return pick(line) + `\nPOSITION: ${pos}` + proposal
+    return pick(line) + `\nPOSITION: ${pos}` + proposal + (c.money ? `\nPAYER: ${mockPayer(c.d)}` : '')
       + (c.amd && Math.random() < 0.25 ? `\nAMENDMENT: ${pick(['Require all proceedings to be conducted in a British accent', 'Add a mandatory 20-minute nap before any action is taken', "Rename the motion to include the word 'Freedom'", 'Establish a task force to study whether a task force is needed', 'Allow a single exception on Fridays'])}` : '');
   },
-  question: (c) => `QUESTION: ${pick([`When you say "${clip(c.motion, 40)}", have you considered the ${noun(c.motion).toLowerCase()}-adjacent alternatives, and if not, why not?`, 'How many times has the petitioner done this before, and did it end well?', 'Is the petitioner aware that this body has never once approved anything on the first try?', 'What would the petitioner do if the answer were no? Be specific.', 'Who, precisely, is paying for this?'])}`,
+  reply: (c) => `${c.a ? pick(['A convenient answer, and I do not believe a word of it.', 'The petitioner speaks plainly. I am unsettled by this.', 'Noted. The record will show that I was not persuaded.', 'That is the first honest thing said in this chamber all day.']) : pick(['Silence. The gallery will draw its own conclusions.', 'The petitioner refuses, which tells me everything.'])}\nFOLLOWUP: ${Math.random() < 0.45 ? pick(['And who told you that?', 'Would you say that under oath a second time?', 'Then why are we here?', 'Has this been budgeted?']) : 'NONE'}${c.money ? `\nPAYER: ${mockPayer(c.d)}` : ''}`,
+  interject: (c) => `${pick([`Point of order. The gentleman from ${c.other.family} is badgering the witness, and doing it badly.`, 'I would remind the petitioner that this body has a long memory and a short lunch break.', `With respect to ${c.other.short}, that is not what the petitioner said, and I was listening.`, 'The petitioner has been more forthcoming than half this chamber.'])}${c.money ? `\nPAYER: ${mockPayer(c.d)}` : ''}`,
+  appropriations: (c) => `${pick(['I have checked, and the Committee has no money. It has never had money.', 'The petitioner keeps saying "me", and I keep hearing "the taxpayer".', 'Whoever benefits should pay, and I cannot yet tell who benefits.', 'I move that the cost be split evenly among everyone who voted yes.', 'There is a fund for this. Nobody knows where it is.'])}\nPAYER: ${mockPayer(c.d)}`,
+  question: (c) => c.money ? `QUESTION: ${pick(['Who, precisely, is paying for this, and have they been told?', 'Is this coming out of your pocket, your employer\'s, or ours?', 'What is the budget, and who approved it?'])}` : `QUESTION: ${pick([`When you say "${clip(c.motion, 40)}", have you considered the ${noun(c.motion).toLowerCase()}-adjacent alternatives, and if not, why not?`, 'How many times has the petitioner done this before, and did it end well?', 'Is the petitioner aware that this body has never once approved anything on the first try?', 'What would the petitioner do if the answer were no? Be specific.', 'Has the petitioner consulted anyone about this, or is this a lone act?'])}`,
   whip: (c) => {
     const lean = ['FOR', 'AMEND', 'AGAINST'].sort((a, b) => c.g[b] - c.g[a])[0];
     const props = c.present.map((d) => d.proposal).filter(Boolean);
-    return `The ${c.g.name} caucus has conferred in the cloakroom and we are, as ever, of one mind. ${pick(['Our members were unanimous, once the dissenters were sent for coffee.', 'We stand together, mostly out of habit.', 'The caucus has spoken, and it has spoken in the same voice it always uses.'])}\nLINE: ${lean}\nPROPOSAL: ${lean === 'AMEND' ? (props[0] || pick(MOCK_PROPOSALS.default)(noun(c.motion).toLowerCase())) : 'NONE'}`;
+    return `The ${c.g.name} caucus has conferred in the cloakroom and we are, as ever, of one mind. ${pick(['Our members were unanimous, once the dissenters were sent for coffee.', 'We stand together, mostly out of habit.', 'The caucus has spoken, and it has spoken in the same voice it always uses.'])}\nLINE: ${lean}\nPROPOSAL: ${lean === 'AMEND' ? (props[0] || pick(MOCK_PROPOSALS.default)(noun(c.motion).toLowerCase())) : 'NONE'}${c.money ? `\nPAYER: ${mockPayer(c.present[0])}` : ''}`;
   },
-  enact: (c) => `ENACTED: ${c.winner.key === 'ORIGINAL' ? `The petitioner shall proceed precisely as asked, namely "${c.motion}"` : `The petitioner shall NOT have what they asked; they shall instead have ${c.winner.text}`}${c.riders.length ? `, subject to the rider that they ${c.riders[0].text.toLowerCase()}` : ''}, and the Committee shall take credit either way.`,
+  enact: (c) => `ENACTED: ${c.winner.key === 'ORIGINAL' ? `The petitioner shall proceed precisely as asked, namely "${c.motion}"` : `The petitioner shall NOT have what they asked; they shall instead have ${c.winner.text}`}${c.riders.length ? `, subject to the rider that they ${c.riders[0].text.toLowerCase()}` : ''}${c.payer ? `, at the expense of ${c.payer}` : ''}, and the Committee shall take credit either way.`,
   eis: () => `The proposed action would displace approximately ${rint(12, 900)} cubic feet of air and startle an estimated ${rint(2, 40)} nearby pigeons. Long-term effects on the local vibe remain unknown. The Agency notes with concern a ${rint(3, 97)}% increase in regret.\nRISK: ${rint(1, 10)}`,
   chair: (c) => `After exhaustive review, the ${c.sub} finds the motion ${pick(['broadly sensible', 'alarmingly reasonable', 'legally ambiguous but emotionally correct', 'a threat to the snack supply'])}. Two members wept during deliberation.\nRECOMMENDATION: ${pick(['FAVORABLE', 'FAVORABLE', 'UNFAVORABLE'])}`,
   filibuster: (c) => (c.round > 1 ? 'As I was saying… where was I. ' : '') + 'I would like to read into the record my grandmother\'s recipe for potato salad. First, you take the potatoes. Not those potatoes. The good ones. Which brings me to the summer of 1987, when I first saw a cumulonimbus cloud and understood what it meant to be small. My favorite clouds, in order, are cumulus, the one shaped like a boat, and stratus, which I respect but do not love. Returning to the potatoes, '.repeat(2) + 'and that, Mr. Chairman, is why I cannot in good conscience yield.',
@@ -1373,13 +1526,13 @@ const MOCK = {
     if (Math.random() < 0.08) choice = 'ABSTAIN';
     else if (Math.random() < 0.15) choice = pick(c.opts.concat('NONE'));
     else choice = line === 'AGAINST' ? 'NONE' : line === 'FOR' ? 'ORIGINAL' : (subs.length ? pick(subs) : 'ORIGINAL');
-    return Array.from({ length: c.n }, (_, i) => `A${i + 1}: ${pick(['YEA', 'NAY'])}`).join('\n') + `\nCHOICE: ${choice}\nREASON: ${pick(['The people demand it.', 'I have not read the bill.', 'My horoscope was clear on this.', 'I never trusted the Subcommittee on Vibes.', 'Principle.', 'Spite, mostly.', 'My caucus would never forgive me otherwise.'])}`;
+    return Array.from({ length: c.n }, (_, i) => `A${i + 1}: ${pick(['YEA', 'NAY'])}`).join('\n') + `\nCHOICE: ${choice}${c.d.payer || S.financial ? `\nPAYER: ${c.d.payer || mockPayer(c.d)}` : ''}\nREASON: ${pick(['The people demand it.', 'I have not read the bill.', 'My horoscope was clear on this.', 'I never trusted the Subcommittee on Vibes.', 'Principle.', 'Spite, mostly.', 'My caucus would never forgive me otherwise.'])}`;
   },
   opinion: () => 'Today this body affirms what history will surely record as a turning point for lunch, liberty, and the pursuit of snacks. The majority rejects the notion that small questions deserve small answers. Let it be written.',
   dissent: () => 'I dissent, and I dissent loudly. Future generations will look back on this vote and ask how we let it happen. My only comfort is that I will be right, eventually.',
   press: (c) => `HEADLINE: ${pick(['CHAOS IN THE CHAMBER', 'SHOCK VOTE ROCKS COMMITTEE', 'DELEGATES STUNNED'])}: ${c.t.YEA}-${c.t.NAY} VOTE ${c.how.toUpperCase()}\nSources describe the scene as "unprecedented" and also "mostly about potatoes." Markets are expected to react.`,
   minister: (c) => pick([`Your Radiance, only a fool would hesitate, and you are the opposite of a fool.`, `I humbly suggest whatever you were already going to do, Majesty.`, `The people love you. Also, my budget is due for review.`, `Whatever you decide, I was always on your side, even before you decided it.`]),
-  decree: (c) => { const r = pick(['YES', 'NO', 'INSTEAD']); return `Hear ye! By the authority vested in Us by Ourselves, We have considered the matter with the full weight of Our wisdom. Let the bells ring and the trumpets sound. Our will is done.\nRULING: ${r}\nINSTEAD: ${r === 'INSTEAD' ? pick(MOCK_PROPOSALS.default)(noun(c.motion).toLowerCase()) : 'NONE'}\nBANISHED: ${c.ministers.length && Math.random() < 0.7 ? pick(c.ministers).short : 'NONE'}`; },
+  decree: (c) => { const r = pick(['YES', 'NO', 'INSTEAD']); return `Hear ye! By the authority vested in Us by Ourselves, We have considered the matter with the full weight of Our wisdom. Let the bells ring and the trumpets sound. Our will is done.\nRULING: ${r}\nINSTEAD: ${r === 'INSTEAD' ? pick(MOCK_PROPOSALS.default)(noun(c.motion).toLowerCase()) : 'NONE'}${c.money ? '\nPAYER: ' + pick(['the petitioner', 'the treasury, which is Us', 'the ministers, jointly']) : ''}\nBANISHED: ${c.ministers.length && Math.random() < 0.7 ? pick(c.ministers).short : 'NONE'}`; },
   statemedia: (c) => `HEADLINE: BELOVED LEADER'S WISDOM ONCE AGAIN PROVEN CORRECT\nCitizens wept with joy in the streets. Historians confirm this was the best decision ever made.`,
 };
 

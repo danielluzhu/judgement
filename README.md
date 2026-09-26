@@ -38,7 +38,13 @@ A session runs:
    Clerk reads trends by caucus and by disposition into the record.
 3. Questions for the petitioner: a few delegates from different caucuses and
    positions put a question to you directly. The session pauses until you answer
-   or decline; your testimony is distributed to every later phase.
+   or decline. The delegate then replies to your answer and may press a
+   follow-up, and a rival from another caucus interjects. Your testimony is
+   distributed to every later phase.
+   If the motion costs money (the Clerk decides), the first question is always
+   "who is paying?", and an appropriations debate follows in which delegates
+   argue about it. They never agree; the bill is charged by plurality to
+   whoever gets the most blame, and the enrolled text says so.
 4. Caucus meetings: each lineage with two or more members elects a whip who
    sets a caucus line and merges the members' ideas into one joint substitute.
 5. Environmental impact study, with a risk rating out of 10.
