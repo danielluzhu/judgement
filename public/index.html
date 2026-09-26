@@ -1,0 +1,1029 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Committee</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏛️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Libre+Franklin:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#E3EADD; --panel:#D5DFCD; --ink:#1D2921; --muted:#56675A; --rule:#9FB39B;
+  --yea:#27488A; --nay:#B1302A; --present:#9C7412; --absent:#8E998F;
+  --btn:#1D2921; --btn-ink:#E3EADD; --seat:#B9C8B4;
+  --sans:"Libre Franklin", "Franklin Gothic Medium", "Arial Narrow", Arial, sans-serif;
+  --type:"Courier Prime", "Courier New", Courier, monospace;
+}
+body.autocracy{
+  --paper:#1B1210; --panel:#281a16; --ink:#F0E3C8; --muted:#B59E7C; --rule:#5A4232;
+  --yea:#D4AE52; --nay:#D0473F; --present:#B59E7C; --absent:#6d5a4a;
+  --btn:#D4AE52; --btn-ink:#1B1210; --seat:#4a372c;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.45;
+  transition:background .5s, color .5s;}
+@media (prefers-reduced-motion: reduce){ *{transition:none!important; animation:none!important} }
+a{color:inherit}
+button,input,textarea,select{font:inherit; color:inherit}
+:focus-visible{outline:3px solid var(--yea); outline-offset:2px}
+.wrap{max-width:1200px; margin:0 auto; padding:28px 24px 80px}
+
+/* Masthead */
+.mast{display:flex; justify-content:space-between; align-items:flex-end; gap:24px; flex-wrap:wrap;
+  border-bottom:6px double var(--ink); padding-bottom:14px}
+.mast h1{margin:0; font-weight:900; font-size:clamp(44px,8vw,88px); line-height:.88; letter-spacing:-.035em}
+.mast .sub{margin:10px 0 0; color:var(--muted); font-size:17px; max-width:34em}
+.conn{font-size:14px; color:var(--muted); max-width:28em; text-align:right}
+.conn b{color:var(--ink)}
+.conn .dot{display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--absent); margin-right:6px; vertical-align:1px}
+.conn .dot.live{background:#3f8a4f}
+
+/* Setup */
+.setup{display:grid; grid-template-columns:1.15fr 1fr; gap:36px; margin-top:28px}
+@media (max-width:860px){ .setup{grid-template-columns:1fr} }
+label.big{display:block; font-weight:800; font-size:20px; margin-bottom:8px}
+textarea#motion{width:100%; min-height:132px; resize:vertical; background:transparent; border:2px solid var(--ink);
+  padding:14px 16px; font-family:var(--type); font-size:21px; line-height:1.35}
+.convene{margin-top:16px; display:flex; gap:14px; align-items:center; flex-wrap:wrap}
+.btn{background:var(--btn); color:var(--btn-ink); border:2px solid var(--btn); padding:13px 22px; font-weight:800;
+  font-size:17px; cursor:pointer}
+.btn:hover{filter:brightness(1.15)}
+.btn:disabled{opacity:.5; cursor:not-allowed}
+.btn.ghost{background:transparent; color:var(--ink); border-color:var(--ink)}
+.eta{font-size:14px; color:var(--muted); max-width:30em}
+
+.modes{display:grid; grid-template-columns:1fr 1fr; border:2px solid var(--ink)}
+.modes button{background:transparent; border:0; padding:14px 12px; cursor:pointer; text-align:left; display:flex; flex-direction:column; justify-content:flex-start}
+.modes button + button{border-left:2px solid var(--ink)}
+.modes button b{display:block; font-size:19px; font-weight:800}
+.modes button span{font-size:13.5px; color:var(--muted)}
+.modes button[aria-pressed="true"]{background:var(--ink); color:var(--paper)}
+.modes button[aria-pressed="true"] span{color:var(--paper); opacity:.8}
+.opts{margin-top:18px}
+.opts h3{font-size:15px; font-weight:800; margin:18px 0 8px}
+.row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+.chip{border:1.5px solid var(--ink); background:transparent; padding:6px 12px; cursor:pointer; font-size:14px; font-weight:600}
+.chip[aria-pressed="true"]{background:var(--ink); color:var(--paper)}
+input.num{width:96px; border:1.5px solid var(--ink); background:transparent; padding:6px 8px; font-size:14px}
+input.text{flex:1; min-width:200px; border:1.5px solid var(--ink); background:transparent; padding:8px 10px; font-size:14px}
+.checks{display:grid; grid-template-columns:1fr 1fr; gap:6px 16px}
+.checks label{display:flex; gap:8px; align-items:flex-start; font-size:14.5px; cursor:pointer}
+.checks input{margin-top:3px; accent-color:var(--ink)}
+.note{font-size:13.5px; color:var(--muted); margin-top:8px}
+.rehearse{margin-top:18px; padding-top:14px; border-top:1px solid var(--rule); font-size:14px}
+.rehearse label{display:flex; gap:8px; align-items:center; cursor:pointer}
+.hidden{display:none!important}
+
+/* Session */
+.strip{margin-top:26px; display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap;
+  border-top:2px solid var(--ink); border-bottom:2px solid var(--ink); padding:12px 0}
+.strip .m{font-family:var(--type); font-size:19px}
+.phases{list-style:none; counter-reset:ph; display:flex; flex-wrap:wrap; gap:4px 18px; padding:0; margin:14px 0 0; font-size:14px}
+.phases li{counter-increment:ph; color:var(--muted)}
+.phases li::before{content:counter(ph) ". "; font-weight:700}
+.phases li.now{color:var(--ink); font-weight:800}
+.phases li.done{color:var(--ink)}
+.phases li.waived{text-decoration:line-through; opacity:.6}
+
+.chamber{display:grid; grid-template-columns:1.55fr 1fr; gap:32px; margin-top:22px; align-items:start}
+@media (max-width:860px){ .chamber{grid-template-columns:1fr} .side{order:-1} }
+.record{border-left:2px solid var(--ink); padding-left:22px; min-height:200px}
+.record h2{font-size:15px; font-weight:800; margin:0 0 4px}
+.record .trim{font-size:13px; color:var(--muted); font-style:italic}
+.phase-head{font-weight:900; font-size:24px; letter-spacing:-.01em; margin:28px 0 10px; padding-top:10px; border-top:1px solid var(--rule)}
+.entry{margin:0 0 14px; font-family:var(--type); font-size:15.5px; line-height:1.55}
+.entry .who{font-family:var(--sans); font-weight:800; font-size:14.5px}
+.entry .role{font-family:var(--sans); font-size:13px; color:var(--muted); margin-left:8px}
+.entry p{margin:3px 0 0; white-space:pre-wrap; overflow-wrap:anywhere}
+.entry.amend p{border-left:4px solid var(--yea); padding-left:10px}
+.chair{font-family:var(--type); font-style:italic; color:var(--muted); margin:8px 0 12px; font-size:15px}
+.chair b{font-style:normal; color:var(--ink); font-family:var(--sans)}
+.vote{font-family:var(--type); font-size:14.5px; margin:0 0 5px}
+.vote .v{font-family:var(--sans); font-weight:900; display:inline-block; min-width:62px}
+.v.YEA{color:var(--yea)} .v.NAY{color:var(--nay)} .v.PRESENT{color:var(--present)} .v.ABSENT{color:var(--absent)}
+.absentee{font-family:var(--type); font-size:14px; color:var(--absent); margin:0 0 8px}
+
+.side{position:sticky; top:16px}
+.burn{border:2px solid var(--ink); padding:14px 16px}
+.burn .n{font-weight:900; font-size:clamp(36px,5vw,54px); line-height:1; letter-spacing:-.03em; font-variant-numeric:tabular-nums}
+.burn .l{font-size:14px; color:var(--muted)}
+.burn .meta{display:flex; gap:18px; margin-top:10px; font-size:14px}
+.burn .meta b{font-variant-numeric:tabular-nums}
+.tally{display:grid; grid-template-columns:repeat(4,1fr); border:2px solid var(--ink); border-top:0}
+.tally > div{padding:10px 8px; text-align:center}
+.tally > div + div{border-left:1px solid var(--rule)}
+.tally .n{font-weight:900; font-size:28px; font-variant-numeric:tabular-nums; line-height:1.1}
+.tally .l{font-size:12.5px; font-weight:700}
+.tally .yea .n{color:var(--yea)} .tally .nay .n{color:var(--nay)} .tally .present .n{color:var(--present)} .tally .absent .n{color:var(--absent)}
+.roster{border:2px solid var(--ink); border-top:0; padding:10px}
+.roster canvas{display:block; width:100%}
+.roster .legend{display:flex; gap:12px; flex-wrap:wrap; font-size:12.5px; color:var(--muted); margin-top:6px}
+.roster .legend i{display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:4px; vertical-align:0}
+.throne{border:2px solid var(--ink); border-top:0; padding:16px}
+.throne .crown{font-size:13px; color:var(--muted)}
+.throne .who{font-weight:900; font-size:22px; line-height:1.15; margin:2px 0 12px; overflow-wrap:anywhere}
+.throne ul{list-style:none; padding:0; margin:0; font-size:14px}
+.throne li{padding:5px 0; border-top:1px solid var(--rule)}
+.throne li.banished{text-decoration:line-through; color:var(--nay)}
+.side .adjourn{margin-top:14px; width:100%}
+
+/* Report */
+.report{margin-top:30px; border:3px solid var(--ink); padding:28px 30px 26px; position:relative; background:var(--panel)}
+.report .kicker{font-size:15px; color:var(--muted); margin:0}
+.report h2{font-weight:900; font-size:clamp(28px,4.2vw,44px); line-height:1.05; letter-spacing:-.02em; margin:6px 0 10px; max-width:15em}
+.report .motion-line{font-family:var(--type); font-size:18px; margin:0 0 6px}
+.report .answer{font-size:22px; font-weight:800; margin:10px 0 18px}
+.stamp{position:absolute; top:22px; right:26px; border:6px double var(--nay); color:var(--nay); font-weight:900;
+  font-size:clamp(28px,4.5vw,50px); padding:4px 16px; transform:rotate(-9deg); letter-spacing:.04em; opacity:.88;
+  mix-blend-mode:multiply; animation:slam .45s cubic-bezier(.2,1.6,.4,1) both}
+body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(--yea)}
+.stamp.pass{border-color:var(--yea); color:var(--yea)}
+@keyframes slam{from{transform:rotate(-20deg) scale(2.6); opacity:0} to{transform:rotate(-9deg) scale(1); opacity:.88}}
+@media (min-width:641px){ .report > h2, .report > .kicker{max-width:calc(100% - 330px)} }
+@media (max-width:640px){ .stamp{position:static; display:inline-block; margin-bottom:12px} }
+.cols{display:grid; grid-template-columns:1fr 1fr; gap:22px 34px; margin-top:6px}
+@media (max-width:760px){ .cols{grid-template-columns:1fr} }
+.report h3{font-size:16px; font-weight:800; margin:0 0 6px; padding-top:10px; border-top:2px solid var(--ink)}
+.report .body{font-family:var(--type); font-size:15px; line-height:1.55; white-space:pre-wrap; margin:0}
+.report ul{margin:0; padding-left:18px; font-size:15px}
+.report li{margin-bottom:4px}
+.report .by{font-size:13.5px; color:var(--muted); margin:0 0 4px}
+.headline{font-weight:900; font-size:22px; line-height:1.15; margin:0 0 6px}
+.stats{margin-top:24px; padding-top:12px; border-top:2px solid var(--ink); font-size:15px}
+.stats b{font-variant-numeric:tabular-nums}
+.actions{display:flex; gap:12px; margin-top:16px; flex-wrap:wrap}
+.error{margin-top:14px; color:var(--nay); font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div>
+      <h1 id="brand">The Committee</h1>
+      <p class="sub" id="tagline">Every decision, no matter how small, deserves the full legislative process.</p>
+    </div>
+    <p class="conn" id="conn"><span class="dot"></span>Checking for Featherless…</p>
+  </header>
+
+  <!-- ============ SETUP ============ -->
+  <section id="setup" class="setup">
+    <div>
+      <label class="big" for="motion">The motion before the Committee</label>
+      <textarea id="motion" maxlength="300" placeholder="Should I get a burrito for lunch?"></textarea>
+      <div class="convene">
+        <button class="btn" id="go">Convene the Committee</button>
+        <span class="eta" id="eta"></span>
+      </div>
+      <div class="error hidden" id="err"></div>
+    </div>
+
+    <div>
+      <div class="modes" role="group" aria-label="System of government">
+        <button id="m-dem" aria-pressed="true"><b>Democracy</b><span>Every model gets a seat and a vote</span></button>
+        <button id="m-aut" aria-pressed="false"><b>Autocracy</b><span>One model decides. Nobody asks why.</span></button>
+      </div>
+
+      <div id="dem-opts" class="opts">
+        <h3>How many delegates to seat</h3>
+        <div class="row" id="sizes">
+          <button class="chip" data-n="12">12</button>
+          <button class="chip" data-n="50" aria-pressed="true">50</button>
+          <button class="chip" data-n="200">200</button>
+          <button class="chip" data-n="all" id="all-chip">Everyone</button>
+          <input class="num" id="dcount" type="number" min="3" value="50" aria-label="Custom delegate count">
+        </div>
+        <h3>Procedures</h3>
+        <div class="checks">
+          <label><input type="checkbox" id="p-sub" checked> Subcommittees</label>
+          <label><input type="checkbox" id="p-amd" checked> Amendments</label>
+          <label><input type="checkbox" id="p-eis" checked> Environmental impact study</label>
+          <label><input type="checkbox" id="p-fil" checked> Filibusters and cloture</label>
+          <label><input type="checkbox" id="p-opn" checked> Majority opinion and dissent</label>
+          <label><input type="checkbox" id="p-prs" checked> Press gallery</label>
+        </div>
+      </div>
+
+      <div id="aut-opts" class="opts hidden">
+        <h3>Your autocrat</h3>
+        <div class="row">
+          <input class="text" id="autocrat" list="modellist" placeholder="Leave blank for a completely random model" autocomplete="off">
+          <button class="chip" id="dice" title="Pick one at random now">Roll the dice</button>
+        </div>
+        <datalist id="modellist"></datalist>
+        <h3>Ministers at court</h3>
+        <div class="row">
+          <input class="num" id="mcount" type="number" min="0" max="8" value="3" aria-label="Number of ministers">
+          <span class="note" style="margin:0">They advise. The autocrat may ignore them, or banish one.</span>
+        </div>
+      </div>
+
+      <div class="rehearse">
+        <label><input type="checkbox" id="rehearsal"> Rehearsal mode: fake delegates, no API calls</label>
+        <div class="note" id="rehearse-note"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SESSION ============ -->
+  <section id="session" class="hidden">
+    <div class="strip">
+      <span class="m" id="s-motion"></span>
+      <span id="s-mode" style="font-weight:800"></span>
+    </div>
+    <ol class="phases" id="phases"></ol>
+
+    <div id="report-slot"></div>
+
+    <div class="chamber">
+      <div class="record" id="record" aria-live="off">
+        <h2>The Record</h2>
+        <div class="trim hidden" id="trim">Earlier proceedings are in the downloadable record.</div>
+        <div id="feed"></div>
+      </div>
+      <aside class="side">
+        <div class="burn">
+          <div class="n" id="tokens">0</div>
+          <div class="l">tokens burned on this question</div>
+          <div class="meta"><span><b id="calls">0</b> model calls</span><span><b id="clock">0:00</b> elapsed</span></div>
+        </div>
+        <div class="tally" id="tally">
+          <div class="yea"><div class="n" id="t-yea">0</div><div class="l">Yea</div></div>
+          <div class="nay"><div class="n" id="t-nay">0</div><div class="l">Nay</div></div>
+          <div class="present"><div class="n" id="t-present">0</div><div class="l">Present</div></div>
+          <div class="absent"><div class="n" id="t-absent">0</div><div class="l">Absent</div></div>
+        </div>
+        <div class="roster" id="roster">
+          <canvas id="seats" height="200"></canvas>
+          <div class="legend">
+            <span><i style="background:var(--seat)"></i>Seated</span>
+            <span><i style="background:var(--ink)"></i>Speaking</span>
+            <span><i style="background:var(--yea)"></i>Yea</span>
+            <span><i style="background:var(--nay)"></i>Nay</span>
+            <span><i style="background:var(--present)"></i>Present</span>
+            <span><i style="border:1.5px solid var(--absent)"></i>Absent</span>
+          </div>
+        </div>
+        <div class="throne hidden" id="throne">
+          <div class="crown">Seated on the throne</div>
+          <div class="who" id="throne-who"></div>
+          <ul id="court"></ul>
+        </div>
+        <button class="btn ghost adjourn" id="stop">Adjourn the session</button>
+      </aside>
+    </div>
+  </section>
+</div>
+
+<script>
+/* =========================================================
+   Utilities
+   ========================================================= */
+const $ = (id) => document.getElementById(id);
+const pick = (a) => a[Math.floor(Math.random() * a.length)];
+const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fmt = (n) => n.toLocaleString('en-US');
+const clip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
+
+/* =========================================================
+   State
+   ========================================================= */
+const S = {
+  mode: 'democracy', models: [], hasKey: false, plan: null, concurrency: 2,
+  rehearsal: false, size: 50, running: false, stop: false, ctrl: null,
+  tokens: 0, calls: 0, failures: 0, t0: 0, record: [], delegates: [], seatDirty: true,
+};
+
+const MOCK_MODELS = [
+  'meta-llama/Meta-Llama-3.1-8B-Instruct', 'Qwen/Qwen2.5-7B-Instruct', 'Qwen/Qwen2.5-72B-Instruct', 'mistralai/Mistral-Nemo-Instruct-2407',
+  'TheDrummer/Rocinante-12B-v1.1', 'Sao10K/L3.3-70B-Euryale-v2.3', 'NousResearch/Hermes-3-Llama-3.1-8B', 'google/gemma-2-9b-it',
+  'EVA-UNIT-01/EVA-Qwen2.5-32B-v0.2', 'Steelskull/L3.3-San-Mai-R1-70b', 'nothingiisreal/MN-12B-Celeste-V1.9', 'anthracite-org/magnum-v4-72b',
+  'cognitivecomputations/dolphin-2.9-llama3-8b', 'DavidAU/MN-Dark-Planet-TITAN-12B', 'MarinaraSpaghetti/NemoMix-Unleashed-12B',
+  'nvidia/Llama-3.1-Nemotron-70B-Instruct-HF', 'deepseek-ai/DeepSeek-R1', 'LatitudeGames/Wayfarer-Large-70B-Llama-3.3',
+  'GalrionSoftworks/MN-LooseCannon-12B-v1', 'KaraKaraWitch/Llama-3.3-MagicalGirl-2.5', 'vicgalle/Roleplay-Llama-3-8B',
+  'NeverSleep/Llama-3-Lumimaid-70B-v0.1', 'ProdeusUnity/Stellar-Odyssey-12b-v0.0', 'microsoft/Phi-3-medium-4k-instruct',
+  'upstage/SOLAR-10.7B-Instruct-v1.0', 'openchat/openchat-3.6-8b', 'teknium/OpenHermes-2.5-Mistral-7B', 'HuggingFaceH4/zephyr-7b-beta',
+  'Gryphe/MythoMax-L2-13b', 'Undi95/Toppy-M-7B', 'lemonilia/ShoriRP-v0.75d', 'jondurbin/airoboros-l2-13b-3.1.1',
+  'abacusai/Smaug-Llama-3-70B-Instruct', 'princeton-nlp/Llama-3-Instruct-8B-SimPO', 'allenai/OLMo-2-1124-13B-Instruct',
+  'internlm/internlm2_5-7b-chat', 'tiiuae/falcon-11B', 'Nexusflow/Starling-LM-7B-beta', 'WizardLMTeam/WizardLM-13B-V1.2',
+  'Weyaxi/Einstein-v7-Qwen2-7B', 'sophosympatheia/Midnight-Miqu-70B-v1.5', 'crestf411/L3.1-8B-sunfall-v0.6.1-dpo',
+].flatMap((m, i) => ['', '-v2', '-abliterated', '-DPO', '-merge', '-uncensored', '-RP', '-lorablated', '-v0.3']
+  .map((suf, j) => (j === 0 ? m : `${m}${suf}`)));
+
+/* =========================================================
+   Boot: connection + model list
+   ========================================================= */
+async function boot() {
+  try {
+    const st = await (await fetch('/api/status')).json();
+    S.hasKey = st.hasKey; S.plan = st.plan; S.concurrency = st.concurrency || 2;
+  } catch { S.hasKey = false; }
+
+  if (S.hasKey) {
+    $('conn').innerHTML = '<span class="dot"></span>Connected. Taking the roll of every model on your plan…';
+    try {
+      const j = await (await fetch('/api/models')).json();
+      S.models = (j.models || []).map((m) => m.id);
+    } catch { S.models = []; }
+  }
+  if (!S.hasKey || !S.models.length) {
+    S.rehearsal = true;
+    $('rehearsal').checked = true;
+    $('rehearsal').disabled = true;
+    $('rehearse-note').textContent = S.hasKey
+      ? 'The model list could not be loaded, so the Committee will rehearse with stand-ins.'
+      : 'No Featherless API key was found. Add FEATHERLESS_API_KEY to .env and restart the server to seat real models.';
+  }
+  renderConn();
+  refreshAllChip();
+  updateEta();
+}
+
+function pool() { return S.rehearsal ? MOCK_MODELS : S.models; }
+
+function renderConn() {
+  const n = pool().length;
+  if (S.rehearsal) {
+    $('conn').innerHTML = `<span class="dot"></span>Rehearsing with <b>${n}</b> stand-in delegates.`;
+  } else {
+    const planName = S.plan?.name ? esc(S.plan.name) : 'your plan';
+    $('conn').innerHTML = `<span class="dot live"></span>Connected to Featherless on <b>${planName}</b> with <b>${fmt(n)}</b> models eligible to serve and <b>${S.concurrency}</b> concurrency units.`;
+  }
+}
+function refreshAllChip() { $('all-chip').textContent = `Everyone (${fmt(pool().length)})`; }
+
+/* =========================================================
+   Setup controls
+   ========================================================= */
+function setMode(m) {
+  S.mode = m;
+  document.body.classList.toggle('autocracy', m === 'autocracy');
+  $('m-dem').setAttribute('aria-pressed', m === 'democracy');
+  $('m-aut').setAttribute('aria-pressed', m === 'autocracy');
+  $('dem-opts').classList.toggle('hidden', m !== 'democracy');
+  $('aut-opts').classList.toggle('hidden', m !== 'autocracy');
+  $('go').textContent = m === 'democracy' ? 'Convene the Committee' : 'Summon the Autocrat';
+  $('brand').textContent = m === 'democracy' ? 'The Committee' : 'The Throne';
+  $('tagline').textContent = m === 'democracy'
+    ? 'Every decision, no matter how small, deserves the full legislative process.'
+    : 'Every decision, no matter how small, deserves one unaccountable ruler.';
+  updateEta();
+}
+$('m-dem').onclick = () => setMode('democracy');
+$('m-aut').onclick = () => setMode('autocracy');
+
+$('sizes').addEventListener('click', (e) => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  [...$('sizes').querySelectorAll('.chip')].forEach((c) => c.setAttribute('aria-pressed', c === b));
+  S.size = b.dataset.n === 'all' ? 'all' : Number(b.dataset.n);
+  if (S.size !== 'all') $('dcount').value = S.size;
+  updateEta();
+});
+$('dcount').addEventListener('input', () => {
+  S.size = Math.max(3, Number($('dcount').value) || 3);
+  [...$('sizes').querySelectorAll('.chip')].forEach((c) => c.setAttribute('aria-pressed', Number(c.dataset.n) === S.size));
+  updateEta();
+});
+['p-sub', 'p-amd', 'p-eis', 'p-fil', 'p-opn', 'p-prs'].forEach((id) => $(id).addEventListener('change', updateEta));
+$('rehearsal').addEventListener('change', () => { S.rehearsal = $('rehearsal').checked; renderConn(); refreshAllChip(); updateEta(); });
+$('mcount').addEventListener('input', updateEta);
+
+$('autocrat').addEventListener('input', () => {
+  const q = $('autocrat').value.toLowerCase();
+  const hits = q ? pool().filter((m) => m.toLowerCase().includes(q)).slice(0, 60) : shuffle(pool()).slice(0, 30);
+  $('modellist').innerHTML = hits.map((m) => `<option value="${esc(m)}">`).join('');
+});
+$('autocrat').addEventListener('focus', () => $('autocrat').dispatchEvent(new Event('input')));
+$('dice').onclick = () => { $('autocrat').value = pick(pool()); };
+
+function delegateCount() {
+  const n = pool().length;
+  return S.size === 'all' ? n : Math.min(n, S.size);
+}
+function humanTime(sec) {
+  if (sec < 90) return `${Math.max(1, Math.round(sec))} seconds`;
+  if (sec < 5400) return `${Math.round(sec / 60)} minutes`;
+  if (sec < 172800) return `${(sec / 3600).toFixed(sec < 36000 ? 1 : 0)} hours`;
+  return `${Math.round(sec / 86400)} days`;
+}
+function updateEta() {
+  let calls;
+  if (S.mode === 'democracy') {
+    const d = delegateCount(), k = subCount(d);
+    calls = 1 + d + d + ($('p-sub').checked ? k : 0) + ($('p-eis').checked ? 1 : 0)
+      + ($('p-fil').checked ? 2 + k : 0) + ($('p-opn').checked ? 2 : 0) + ($('p-prs').checked ? 1 : 0);
+  } else {
+    calls = 2 + (Number($('mcount').value) || 0);
+  }
+  if (S.rehearsal) { $('eta').textContent = `About ${fmt(calls)} pretend model calls. No tokens will be harmed.`; return; }
+  const secs = (calls * 9) / Math.max(1, S.concurrency);
+  $('eta').textContent = `About ${fmt(calls)} model calls, which is roughly ${humanTime(secs)} at your plan's concurrency. Actual time depends on how many models have to wake up.`;
+}
+function subCount(d) { return Math.max(2, Math.min(6, Math.round(d / 8))); }
+
+/* =========================================================
+   Model calling
+   ========================================================= */
+class Adjourned extends Error {}
+
+async function ask(model, prompt, maxTokens, kind, ctx = {}) {
+  if (S.stop) throw new Adjourned();
+  S.calls++; renderStats();
+  let r;
+  try {
+    if (S.rehearsal) {
+      await sleep(rint(150, 900) * (kind === 'filibuster' ? 3 : 1));
+      if (S.stop) throw new Adjourned();
+      r = Math.random() < 0.05 ? { error: 'mock absence' } : { text: MOCK[kind](ctx) };
+    } else {
+      const res = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, prompt, max_tokens: maxTokens, temperature: 0.95 }),
+        signal: S.ctrl.signal,
+      });
+      r = await res.json();
+    }
+  } catch (e) {
+    if (S.stop) throw new Adjourned();
+    r = { error: String(e.message || e) };
+  }
+  const used = r.usage?.total_tokens || Math.round((prompt.length + (r.text || '').length) / 4);
+  S.tokens += used; renderStats();
+  if (r.error || !r.text || !r.text.trim()) { S.failures++; return null; }
+  return r.text.trim().replace(/\n{3,}/g, '\n\n');
+}
+
+async function runPool(items, limit, fn) {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      if (S.stop) throw new Adjourned();
+      const idx = i++;
+      await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+}
+const poolLimit = () => (S.rehearsal ? 10 : Math.max(4, Math.min(24, S.concurrency * 3)));
+
+/* =========================================================
+   Record + rendering
+   ========================================================= */
+const FEED_MAX = 350;
+function addNode(html, textForRecord) {
+  S.record.push(textForRecord);
+  const feed = $('feed');
+  feed.insertAdjacentHTML('beforeend', html);
+  while (feed.children.length > FEED_MAX) { feed.firstElementChild.remove(); $('trim').classList.remove('hidden'); }
+  const nearBottom = window.innerHeight + window.scrollY > document.body.scrollHeight - 400;
+  if (nearBottom && !S.reportShown) feed.lastElementChild?.scrollIntoView({ block: 'nearest' });
+}
+function phaseHead(name) { addNode(`<h3 class="phase-head">${esc(name)}</h3>`, `\n=== ${name.toUpperCase()} ===\n`); }
+function chair(text, who = 'The Chair') { addNode(`<p class="chair"><b>${esc(who)}:</b> ${esc(text)}</p>`, `${who}: ${text}`); }
+function speech(d, role, text, cls = '') {
+  addNode(`<article class="entry ${cls}"><span class="who">${esc(d.label)}</span><span class="role">${esc(role)}</span><p>${esc(text)}</p></article>`,
+    `${d.label} [${role}] (${d.model}):\n${text}\n`);
+}
+function absentee(d, what) {
+  addNode(`<p class="absentee">${esc(d.label)} ${esc(what)}</p>`, `${d.label} ${what}`);
+}
+function voteLine(d, v, reason) {
+  addNode(`<p class="vote"><span class="v ${v}">${v === 'YEA' ? 'Yea' : v === 'NAY' ? 'Nay' : v === 'PRESENT' ? 'Present' : 'Absent'}</span>${esc(d.label)}${reason ? ': ' + esc(reason) : ''}</p>`,
+    `${v.padEnd(8)} ${d.label}${reason ? ': ' + reason : ''}`);
+}
+
+function renderStats() {
+  $('tokens').textContent = fmt(S.tokens);
+  $('calls').textContent = fmt(S.calls);
+}
+let clockTimer;
+function startClock() {
+  S.t0 = Date.now();
+  clearInterval(clockTimer);
+  clockTimer = setInterval(() => { $('clock').textContent = elapsed(); }, 1000);
+}
+function elapsed() {
+  const s = Math.floor((Date.now() - S.t0) / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+
+function setPhases(list) {
+  $('phases').innerHTML = list.map((p) => `<li data-k="${p.k}" class="${p.on === false ? 'waived' : ''}">${esc(p.name)}</li>`).join('');
+}
+function phase(k) {
+  let seen = false;
+  [...$('phases').children].forEach((li) => {
+    if (li.dataset.k === k) { li.classList.add('now'); seen = true; }
+    else if (!seen) { li.classList.remove('now'); if (!li.classList.contains('waived')) li.classList.add('done'); }
+  });
+}
+
+function tally() {
+  const t = { YEA: 0, NAY: 0, PRESENT: 0, ABSENT: 0 };
+  for (const d of S.delegates) if (d.vote) t[d.vote]++;
+  $('t-yea').textContent = fmt(t.YEA); $('t-nay').textContent = fmt(t.NAY);
+  $('t-present').textContent = fmt(t.PRESENT); $('t-absent').textContent = fmt(t.ABSENT);
+  return t;
+}
+
+/* ---------- Hemicycle seating chart ---------- */
+let seatLayout = null;
+function layoutSeats(n) {
+  if (!n) return null;
+  const R = Math.max(1, Math.ceil(Math.sqrt(n / 3.67)));
+  const r0 = R === 1 ? 1 : 0.36;
+  const radii = Array.from({ length: R }, (_, i) => (R === 1 ? 1 : r0 + ((1 - r0) * i) / (R - 1)));
+  const sum = radii.reduce((a, b) => a + b, 0);
+  const raw = radii.map((r) => (n * r) / sum);
+  const cnt = raw.map(Math.floor);
+  let rem = n - cnt.reduce((a, b) => a + b, 0);
+  raw.map((c, i) => [c - Math.floor(c), i]).sort((a, b) => b[0] - a[0]).slice(0, rem).forEach(([, i]) => cnt[i]++);
+  const seats = [];
+  radii.forEach((r, i) => {
+    const c = cnt[i];
+    for (let j = 0; j < c; j++) {
+      const a = c === 1 ? Math.PI / 2 : Math.PI * (1 - j / (c - 1));
+      seats.push({ x: r * Math.cos(a), y: r * Math.sin(a), a });
+    }
+  });
+  seats.sort((p, q) => q.a - p.a);
+  const rowGap = R > 1 ? (1 - r0) / (R - 1) : 0.5;
+  const arcGap = Math.PI * radii[0] / Math.max(1, cnt[0] - 1);
+  return { seats, dot: Math.min(0.07, Math.min(rowGap, arcGap) * 0.4) };
+}
+const ORDER = { YEA: 0, PRESENT: 1, ABSENT: 2, NAY: 3 };
+function drawSeats() {
+  if (!S.seatDirty) return; S.seatDirty = false;
+  const cv = $('seats'); const ctx = cv.getContext('2d');
+  const W = cv.clientWidth || 300, H = Math.round(W * 0.55), dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  if (!seatLayout) return;
+  const css = getComputedStyle(document.body);
+  const col = (v) => css.getPropertyValue(v).trim();
+  const colors = { seated: col('--seat'), speaking: col('--ink'), YEA: col('--yea'), NAY: col('--nay'), PRESENT: col('--present') };
+  const absent = col('--absent');
+  const dot = seatLayout.dot;
+  const scale = Math.min((W / 2 - 3) / (1 + dot), (H - 6) / (1 + 2 * dot));
+  const cx = W / 2, cy = H - dot * scale - 3;
+  const order = S.delegates.slice();
+  if (S.votingStarted) order.sort((a, b) => (ORDER[a.vote] ?? 1.5) - (ORDER[b.vote] ?? 1.5) || a.i - b.i);
+  const r = Math.max(0.8, dot * scale);
+  order.forEach((d, idx) => {
+    const s = seatLayout.seats[idx]; if (!s) return;
+    const x = cx + s.x * scale, y = cy - s.y * scale;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (d.vote === 'ABSENT') { ctx.strokeStyle = absent; ctx.lineWidth = Math.max(0.6, r * 0.35); ctx.stroke(); }
+    else { ctx.fillStyle = colors[d.vote || d.status] || colors.seated; ctx.fill(); }
+  });
+}
+function markSeat(d, status) { d.status = status; S.seatDirty = true; }
+function seatLoop() { if (S.running) { drawSeats(); requestAnimationFrame(seatLoop); } }
+window.addEventListener('resize', () => { S.seatDirty = true; drawSeats(); });
+
+/* =========================================================
+   Delegates
+   ========================================================= */
+const HONORIFICS = ['Rep.', 'Sen.', 'Del.', 'Rep.', 'Sen.'];
+function mkDelegate(model, i) {
+  const [party, rest] = model.includes('/') ? [model.split('/')[0], model.split('/').slice(1).join('/')] : ['Independent', model];
+  const short = clip(rest.replace(/[-_](instruct|chat|hf|it)$/i, ''), 34);
+  return { i, model, party, short, label: `${pick(HONORIFICS)} ${short} (${party})`, status: 'seated', vote: null };
+}
+
+const PREFACE = 'You are a member of the Grand Committee, a legislative body that treats every trivial question with enormous, pompous seriousness. Stay fully in character, be funny, and keep it brief.';
+const FALLBACK_SUBS = ['Subcommittee on Unforeseen Consequences', 'Subcommittee on Vibes and Morale', 'Subcommittee on Things That Could Go Wrong',
+  'Subcommittee on Fiscal Snacking', 'Subcommittee on Precedent and Regret', 'Subcommittee on Adjacent Matters'];
+
+function firstLineValue(text, key) {
+  const m = text.match(new RegExp(`^[\\s*#_>-]*${key}\\s*[:\\-]\\s*(.+)$`, 'im'));
+  return m ? m[1].replace(/[*_]/g, '').trim() : null;
+}
+function stripKeys(text, keys) {
+  return text.split('\n').filter((l) => !keys.some((k) => new RegExp(`^[\\s*#_>-]*${k}\\s*[:\\-]`, 'i').test(l))).join('\n').trim();
+}
+function voteWord(s, allowYesNo = true) {
+  const u = String(s || '').toUpperCase();
+  if (/\b(YEA|AYE)\b/.test(u) || (allowYesNo && /\bYES\b/.test(u))) return 'YEA';
+  if (/\bNAY\b/.test(u) || (allowYesNo && /\bNO\b/.test(u))) return 'NAY';
+  return null;
+}
+
+/* =========================================================
+   DEMOCRACY
+   ========================================================= */
+async function democracy(motion) {
+  const P = { sub: $('p-sub').checked, amd: $('p-amd').checked, eis: $('p-eis').checked, fil: $('p-fil').checked, opn: $('p-opn').checked, prs: $('p-prs').checked };
+  const models = shuffle(pool()).slice(0, delegateCount());
+  S.delegates = models.map(mkDelegate);
+  const D = S.delegates;
+  const k = P.sub ? subCount(D.length) : 0;
+  const out = { mode: 'democracy', motion, P, title: null, subs: [], findings: [], eis: null, amendments: [], filibuster: null };
+
+  setPhases([
+    { k: 'order', name: 'Call to order' }, { k: 'hear', name: P.sub ? 'Subcommittee hearings' : 'Floor debate' },
+    { k: 'eis', name: 'Environmental impact study', on: P.eis }, { k: 'rep', name: 'Subcommittee reports', on: P.sub },
+    { k: 'fil', name: 'Filibuster', on: P.fil }, { k: 'vote', name: 'Roll-call vote' },
+    { k: 'op', name: 'Opinions and press', on: P.opn || P.prs },
+  ]);
+  seatLayout = layoutSeats(D.length); S.seatDirty = true;
+
+  /* 1. Call to order */
+  phase('order'); phaseHead('Call to order');
+  chair(`The Grand Committee will come to order. ${fmt(D.length)} delegates are seated. The motion before us: "${motion}"`);
+  let clerkModel = pick(pool()), clerkText = null;
+  for (let t = 0; t < 3 && !clerkText; t++) {
+    clerkText = await ask(clerkModel, `${PREFACE}\nYou are the Clerk of the Grand Committee. The motion before the Committee is: "${motion}"\nGive the motion a pompous official bill title, and name ${Math.max(k, 2)} subcommittees with ridiculous but plausible names that will study it.\nReply in exactly this format and nothing else:\nTITLE: <bill title>\n${Array.from({ length: Math.max(k, 2) }, () => 'SUBCOMMITTEE: <name>').join('\n')}`, 220, 'clerk', { motion, k: Math.max(k, 2) });
+    if (!clerkText) { chair(`The Clerk (${mkDelegate(clerkModel).short}) failed to report for duty and has been replaced.`); clerkModel = pick(pool()); }
+  }
+  out.title = (clerkText && firstLineValue(clerkText, 'TITLE')) || `The ${clip(motion.replace(/\?$/, ''), 60)} Act of 2026`;
+  out.title = out.title.replace(/^["']|["']$/g, '');
+  const parsedSubs = clerkText ? [...clerkText.matchAll(/SUBCOMMITTEE\s*[:\-]\s*(.+)/gi)].map((m) => m[1].replace(/[*_"]/g, '').trim()).filter(Boolean) : [];
+  if (P.sub) {
+    out.subs = Array.from({ length: k }, (_, i) => parsedSubs[i] || FALLBACK_SUBS[i % FALLBACK_SUBS.length]);
+    out.subs = out.subs.map((s) => (/committee/i.test(s) ? s : `Subcommittee on ${s}`));
+    D.forEach((d, i) => { d.sub = i % k; });
+    D.sort((a, b) => a.sub - b.sub).forEach((d, i) => { d.i = i; });
+  }
+  chair(`The Clerk has entered the motion into the record as "${out.title}".`, 'The Clerk');
+  if (P.sub) chair(`The motion is referred to ${k} subcommittees: ${out.subs.join('; ')}.`);
+
+  /* 2. Hearings */
+  phase('hear'); phaseHead(P.sub ? 'Subcommittee hearings' : 'Floor debate');
+  const order = P.sub ? D.slice() : shuffle(D);
+  await runPool(order, poolLimit(), async (d) => {
+    markSeat(d, 'speaking');
+    const where = P.sub ? `, serving on the ${out.subs[d.sub]}` : ', speaking during floor debate';
+    const prompt = `${PREFACE}\nYou are ${d.label}${where}. The motion before the Committee is: "${motion}", officially titled "${out.title}".\nGive a statement for the record in 1 to 3 sentences, as a pompous legislator with strong opinions.${P.amd ? '\nIf you want, propose one amendment to the motion on its own final line, starting with "AMENDMENT:".' : ''}`;
+    const text = await ask(d.model, prompt, 180, 'statement', { motion, d, amd: P.amd });
+    markSeat(d, 'seated');
+    if (!text) { d.missedHearing = true; absentee(d, pick(['did not respond and is presumed to be at lunch.', 'was absent from the hearing.', 'sent a staffer, who said nothing.'])); return; }
+    const amendment = P.amd ? firstLineValue(text, 'AMENDMENT') : null;
+    d.statement = clip(stripKeys(text, ['AMENDMENT']), 700);
+    if (d.statement) speech(d, P.sub ? out.subs[d.sub] : 'Floor debate', d.statement);
+    if (amendment && amendment.length > 6 && !/^none\b/i.test(amendment)) {
+      const a = { text: clip(amendment, 220), by: d };
+      out.amendments.push(a);
+      speech(d, 'introduces an amendment', a.text, 'amend');
+    }
+  });
+
+  /* 3. Environmental impact study */
+  if (P.eis) {
+    phase('eis'); phaseHead('Environmental impact study');
+    const agency = mkDelegate(pick(pool()), -1);
+    agency.label = `The Environmental Protection Agency (${agency.short})`;
+    const text = await ask(agency.model, `${PREFACE}\nYou are the Committee's Environmental Protection Agency. Write a brief Environmental Impact Statement (3 to 4 sentences) on the motion: "${motion}". Include at least one absurdly specific statistic. End with a line in the format "RISK: <number from 1 to 10>".`, 260, 'eis', { motion });
+    if (text) {
+      const risk = parseInt(firstLineValue(text, 'RISK') || '', 10);
+      out.eis = { text: stripKeys(text, ['RISK']), risk: Number.isFinite(risk) ? Math.max(1, Math.min(10, risk)) : null, by: agency.short };
+      speech(agency, out.eis.risk ? `Risk rating ${out.eis.risk} of 10` : 'Impact statement', out.eis.text);
+    } else chair('The Environmental Protection Agency did not return its study. The Committee will proceed without knowing the consequences, as is tradition.');
+  }
+
+  /* 4. Subcommittee reports */
+  if (P.sub) {
+    phase('rep'); phaseHead('Subcommittee reports');
+    await runPool(out.subs.map((name, i) => ({ name, i })), poolLimit(), async ({ name, i }) => {
+      const members = D.filter((d) => d.sub === i);
+      const chairD = members.find((d) => !d.missedHearing) || members[0];
+      if (!chairD) return;
+      const said = members.filter((d) => d.statement).slice(0, 10).map((d) => `- ${d.short}: ${clip(d.statement.replace(/\s+/g, ' '), 160)}`).join('\n') || '- (nobody said anything useful)';
+      markSeat(chairD, 'speaking');
+      const text = await ask(chairD.model, `${PREFACE}\nYou are ${chairD.label}, Chair of the ${name}. The motion is: "${motion}".\nYour members said:\n${said}\nIssue your subcommittee's official finding in 2 sentences. End with a line that says either "RECOMMENDATION: FAVORABLE" or "RECOMMENDATION: UNFAVORABLE".`, 200, 'chair', { motion, sub: name });
+      markSeat(chairD, 'seated');
+      if (!text) { out.findings.push({ name, rec: 'NO REPORT', text: 'The Chair did not submit a report.', by: chairD.short }); absentee(chairD, `(Chair, ${name}) lost the report.`); return; }
+      const recRaw = (firstLineValue(text, 'RECOMMENDATION') || '').toUpperCase();
+      const rec = recRaw.includes('UNFAV') ? 'UNFAVORABLE' : recRaw.includes('FAV') ? 'FAVORABLE' : 'UNCLEAR';
+      const body = stripKeys(text, ['RECOMMENDATION']);
+      out.findings.push({ name, rec, text: body, by: chairD.short, chair: chairD });
+      speech(chairD, `Chair, ${name}: ${rec.toLowerCase()}`, body);
+    });
+    out.findings.sort((a, b) => out.subs.indexOf(a.name) - out.subs.indexOf(b.name));
+  }
+
+  /* Pick amendments for the floor */
+  const floorAmd = P.amd ? shuffle(out.amendments).slice(0, 4) : [];
+  if (P.amd) {
+    if (out.amendments.length > floorAmd.length) chair(`${out.amendments.length} amendments were introduced. The Rules Committee, citing time, has allowed ${floorAmd.length} to reach the floor.`);
+    else if (!out.amendments.length) chair('No amendments were introduced. Several delegates appear disappointed in themselves.');
+  }
+
+  /* 5. Filibuster */
+  if (P.fil && D.length >= 3) {
+    phase('fil');
+    const fb = pick(D.filter((d) => !d.missedHearing).length ? D.filter((d) => !d.missedHearing) : D);
+    phaseHead('Filibuster');
+    chair(`${fb.label} has taken the floor and refuses to yield.`);
+    const leaders = P.sub ? out.findings.map((f) => f.chair).filter(Boolean) : shuffle(D.filter((d) => d !== fb)).slice(0, 5);
+    const cloVoters = leaders.length ? leaders : shuffle(D.filter((d) => d !== fb)).slice(0, 5);
+    out.filibuster = { by: fb, rounds: 0, cloture: null };
+    for (let round = 1; round <= 2; round++) {
+      markSeat(fb, 'speaking');
+      const text = await ask(fb.model, `${PREFACE}\nYou are ${fb.label}, and you are filibustering to delay the vote on "${motion}". Deliver a long, rambling filibuster speech that wanders wildly off-topic: read from an imaginary cookbook, recount your childhood, list your favorite clouds. At least 150 words. Never reach a point.${round > 1 ? ' This is hour nine of your filibuster; continue where you left off, more tired and less coherent.' : ''}`, 650, 'filibuster', { motion, round });
+      markSeat(fb, 'seated');
+      out.filibuster.rounds = round;
+      if (!text) { chair(`${fb.label} has collapsed at the podium. The filibuster is over.`); break; }
+      speech(fb, round === 1 ? 'Filibuster, hour one' : 'Filibuster, hour nine', text);
+      chair(`A motion for cloture has been filed. ${cloVoters.length} members of leadership will vote; three-fifths are needed to end debate.`);
+      let yes = 0, no = 0;
+      await runPool(cloVoters, poolLimit(), async (d) => {
+        const t = await ask(d.model, `${PREFACE}\nYou are ${d.label}. ${fb.label} has been filibustering the motion "${motion}" for hours. Should the Committee invoke cloture and end debate?\nReply with a first line of exactly "CLOTURE: YEA" or "CLOTURE: NAY", then one short sentence.`, 80, 'cloture', {});
+        const v = t ? voteWord(firstLineValue(t, 'CLOTURE') || t) : null;
+        if (v === 'YEA') yes++; else if (v === 'NAY') no++;
+        voteLine(d, v || 'PRESENT', t ? clip(stripKeys(t, ['CLOTURE']).replace(/\s+/g, ' '), 140) : 'did not respond');
+      });
+      const passed = yes >= Math.ceil(cloVoters.length * 0.6);
+      out.filibuster.cloture = `${yes}–${no}`;
+      if (passed) { chair(`Cloture is invoked, ${yes} to ${no}. The Sergeant-at-Arms gently escorts ${fb.short} from the podium.`); break; }
+      if (round === 1) chair(`Cloture fails, ${yes} to ${no}. The filibuster continues. Someone orders pizza.`);
+      else chair(`Cloture fails again, ${yes} to ${no}, but ${fb.short} has fallen asleep mid-sentence. Debate is closed by default.`);
+    }
+  }
+
+  /* 6. Roll-call vote */
+  phase('vote'); phaseHead('Roll-call vote');
+  S.votingStarted = true; S.seatDirty = true;
+  const ctxLines = [];
+  if (out.eis?.risk) ctxLines.push(`The Environmental Impact Statement rated the risk ${out.eis.risk} out of 10.`);
+  if (out.findings.length) ctxLines.push('Subcommittee recommendations: ' + out.findings.map((f) => `${f.name}: ${f.rec}`).join('; ') + '.');
+  if (out.filibuster) ctxLines.push(`${out.filibuster.by.short} filibustered for ${out.filibuster.rounds === 2 ? 'nine hours' : 'an hour'}.`);
+  const amdBlock = floorAmd.length ? '\nAmendments under consideration:\n' + floorAmd.map((a, i) => `A${i + 1}: ${a.text}`).join('\n') : '';
+  const fmtBlock = floorAmd.map((_, i) => `A${i + 1}: YEA or NAY`).concat(['FINAL: YEA or NAY', 'REASON: <one short sentence>']).join('\n');
+  chair(`The Clerk will call the roll. ${floorAmd.length ? `Members will vote on ${floorAmd.length} amendment${floorAmd.length > 1 ? 's' : ''} and the motion.` : 'Members will vote on the motion.'}`);
+  floorAmd.forEach((a) => { a.yea = 0; a.nay = 0; });
+
+  await runPool(shuffle(D), poolLimit(), async (d) => {
+    markSeat(d, 'speaking');
+    const text = await ask(d.model, `${PREFACE}\nYou are ${d.label}. It is time for the final roll-call vote on the motion: "${motion}" (${out.title}).\n${ctxLines.join('\n')}${amdBlock}\nVote on ${floorAmd.length ? 'each amendment and ' : ''}the final motion. Reply in exactly this format:\n${fmtBlock}`, 140, 'vote', { n: floorAmd.length });
+    if (!text) { d.vote = 'ABSENT'; markSeat(d, 'seated'); voteLine(d, 'ABSENT', ''); tally(); return; }
+    let final = voteWord(firstLineValue(text, 'FINAL'));
+    if (!final) final = voteWord(text, false);
+    floorAmd.forEach((a, i) => {
+      const v = voteWord(firstLineValue(text, `A${i + 1}`));
+      if (v === 'YEA') a.yea++; else if (v === 'NAY') a.nay++;
+    });
+    let reason = firstLineValue(text, 'REASON') || stripKeys(text, ['FINAL', 'REASON', 'A\\d+']).split(/(?<=[.!?])\s/)[0] || '';
+    reason = clip(reason.replace(/\s+/g, ' '), 180);
+    d.vote = final || 'PRESENT'; d.reason = reason;
+    markSeat(d, 'seated');
+    voteLine(d, d.vote, d.vote === 'PRESENT' && !final ? (reason || 'could not be understood') : reason);
+    tally();
+  });
+  const t = tally();
+  out.tally = t;
+  out.result = t.YEA > t.NAY ? 'PASSED' : t.NAY > t.YEA ? 'FAILED' : 'DEADLOCKED';
+  out.amendResults = floorAmd.map((a) => ({ ...a, adopted: a.yea > a.nay }));
+  const adopted = out.amendResults.filter((a) => a.adopted);
+  if (floorAmd.length) chair(`Amendments: ${out.amendResults.map((a, i) => `A${i + 1} ${a.adopted ? 'adopted' : 'rejected'} ${a.yea}–${a.nay}`).join('; ')}.`);
+  chair(out.result === 'DEADLOCKED'
+    ? `On the motion, the vote is tied ${t.YEA} to ${t.NAY}. The Vice President could not be reached. The motion is deadlocked.`
+    : `On the motion, the yeas are ${t.YEA}, the nays are ${t.NAY}, with ${t.PRESENT} present and ${t.ABSENT} absent. The motion is ${out.result.toLowerCase()}${adopted.length ? ', as amended' : ''}.`);
+
+  /* 7. Opinions + press */
+  if (P.opn || P.prs) { phase('op'); phaseHead('Opinions and press'); }
+  if (P.opn && out.result !== 'DEADLOCKED') {
+    const winSide = out.result === 'PASSED' ? 'YEA' : 'NAY';
+    const winners = D.filter((d) => d.vote === winSide), losers = D.filter((d) => d.vote === (winSide === 'YEA' ? 'NAY' : 'YEA'));
+    const verdict = `${out.result === 'PASSED' ? 'passed' : 'failed'} ${t.YEA} to ${t.NAY}`;
+    const jobs = [];
+    if (winners.length) jobs.push({ d: pick(winners), kind: 'opinion', role: 'Majority opinion', prompt: (d) => `${PREFACE}\nYou are ${d.label}. The motion "${motion}" has ${verdict}. You voted with the majority. Write the majority opinion in 3 sentences, with the gravity of a landmark Supreme Court ruling.` });
+    if (losers.length) jobs.push({ d: pick(losers), kind: 'dissent', role: 'Dissenting opinion', prompt: (d) => `${PREFACE}\nYou are ${d.label}. The motion "${motion}" has ${verdict}, and you were on the losing side. Write a bitter, dramatic dissent in 3 sentences.` });
+    await runPool(jobs, 2, async (j) => {
+      markSeat(j.d, 'speaking');
+      const text = await ask(j.d.model, j.prompt(j.d), 260, j.kind, { motion, passed: out.result === 'PASSED' });
+      markSeat(j.d, 'seated');
+      if (text) { out[j.kind] = { text, by: j.d }; speech(j.d, j.role, text); }
+    });
+    if (!losers.length) out.dissent = { text: 'No dissent was filed. One delegate was later seen crying in the cloakroom.', by: null };
+  }
+  if (P.prs) {
+    const reporter = mkDelegate(pick(pool()), -1);
+    reporter.label = `The Press Gallery (${reporter.short})`;
+    const how = out.result === 'DEADLOCKED' ? 'deadlocked on' : out.result === 'PASSED' ? 'approved' : 'rejected';
+    const extra = [out.filibuster && 'a filibuster', out.eis && 'an environmental impact study', floorAmd.length && `${floorAmd.length} amendments`].filter(Boolean).join(', ');
+    const text = await ask(reporter.model, `You are a tabloid political reporter in the Grand Committee's press gallery. The Committee of ${D.length} AI delegates just voted ${t.YEA}-${t.NAY} and ${how} the motion "${motion}"${extra ? ` after ${extra}` : ''}. Write a sensational headline and 2 sentences of coverage. Format:\nHEADLINE: <headline>\n<coverage>`, 200, 'press', { motion, how, t });
+    if (text) {
+      out.press = { headline: (firstLineValue(text, 'HEADLINE') || '').replace(/^["']|["']$/g, ''), text: stripKeys(text, ['HEADLINE']), by: reporter.short };
+      speech(reporter, out.press.headline || 'Breaking', out.press.text);
+    }
+  }
+  return out;
+}
+
+/* =========================================================
+   AUTOCRACY
+   ========================================================= */
+const PORTFOLIOS = ['Minister of Snacks', 'Minister of Vibes', 'Minister of Agreeing', 'Minister of Unnecessary Pageantry', 'Minister of Plausible Deniability',
+  'Minister of Naps', 'Minister of Loud Opinions', 'Minister of Things Nobody Asked For', 'Minister of Retroactive Justification', 'Keeper of the Royal Group Chat'];
+const STYLES = ['His Radiant Eternal Excellency', 'The Supreme and Glorious Leader', 'Her Most Serene Highness', 'The Grand Protector of the Realm',
+  'Their Imperial Majesty', 'The Undisputed Sovereign'];
+
+async function autocracy(motion) {
+  let chosen = $('autocrat').value.trim();
+  const random = !chosen;
+  if (random) chosen = pick(pool());
+  const ruler = mkDelegate(chosen, 0);
+  ruler.style = pick(STYLES);
+  ruler.label = `${ruler.style}, ${ruler.short} the First`;
+  const nMin = Math.max(0, Math.min(8, Number($('mcount').value) || 0));
+  const ministers = shuffle(pool().filter((m) => m !== chosen)).slice(0, nMin).map((m, i) => {
+    const d = mkDelegate(m, i + 1); d.portfolio = PORTFOLIOS[i % PORTFOLIOS.length] || pick(PORTFOLIOS);
+    d.label = `${d.short}, ${d.portfolio}`; return d;
+  });
+  const out = { mode: 'autocracy', motion, ruler, ministers, coups: [] };
+  S.delegates = [];
+  $('throne').classList.remove('hidden'); $('roster').classList.add('hidden'); $('tally').classList.add('hidden');
+  renderThrone(ruler, ministers);
+
+  setPhases([{ k: 'summon', name: 'Summoning' }, { k: 'counsel', name: 'Counsel of ministers', on: nMin > 0 }, { k: 'decree', name: 'The decree' }, { k: 'media', name: 'State media' }]);
+  phase('summon'); phaseHead('Summoning');
+  chair(`${random ? 'Fate has chosen' : 'You have chosen'} ${ruler.model} to rule. All rise for ${ruler.label}.`, 'The Herald');
+  chair(`The matter before the throne: "${motion}"`, 'The Herald');
+
+  if (nMin) {
+    phase('counsel'); phaseHead('Counsel of ministers');
+    await runPool(ministers, poolLimit(), async (d) => {
+      const text = await ask(d.model, `You are ${d.short}, ${d.portfolio} in the court of ${ruler.label}. The Supreme Leader must decide: "${motion}". Offer 1 to 2 sentences of groveling, self-serving advice. Stay in character and be funny.`, 150, 'minister', { motion, d });
+      if (!text) { d.silent = true; absentee(d, 'said nothing, which is widely considered the safest option.'); return; }
+      d.advice = clip(text, 400);
+      speech(d, 'Advises the throne', d.advice);
+    });
+  }
+
+  phase('decree'); phaseHead('The decree');
+  const counsel = ministers.filter((m) => m.advice).map((m) => `- ${m.short} (${m.portfolio}): ${clip(m.advice.replace(/\s+/g, ' '), 200)}`).join('\n');
+  let decree = null;
+  for (let tries = 0; tries < 4 && !decree; tries++) {
+    decree = await ask(ruler.model, `You are ${ruler.label}, absolute ruler of the realm, answerable to no one. The matter before you: "${motion}".\n${counsel ? `Your ministers advised:\n${counsel}\n` : ''}Issue a grandiose royal decree in 3 to 5 sentences. Then add these lines:\nRULING: YES or NO\nBANISHED: <name of one minister to banish, or NONE>`, 320, 'decree', { motion, ministers });
+    if (!decree && tries < 3) {
+      const usurper = mkDelegate(pick(pool().filter((m) => m !== ruler.model)), 0);
+      chair(`${ruler.label} has not responded. A coup! ${usurper.model} seizes the throne.`, 'The Herald');
+      out.coups.push(ruler.short);
+      ruler.model = usurper.model; ruler.short = usurper.short; ruler.style = pick(STYLES); ruler.label = `${ruler.style}, ${ruler.short} the First`;
+      renderThrone(ruler, ministers);
+    }
+  }
+  if (!decree) {
+    out.ruling = 'NONE';
+    chair('After four coups in a single afternoon, the realm has collapsed into anarchy. No decree was issued.', 'The Herald');
+  } else {
+    const ruling = voteWord(firstLineValue(decree, 'RULING')) || voteWord(decree, false);
+    out.ruling = ruling === 'YEA' ? 'YES' : ruling === 'NAY' ? 'NO' : 'UNCLEAR';
+    const banishedRaw = firstLineValue(decree, 'BANISHED') || '';
+    const hit = ministers.find((m) => banishedRaw && (banishedRaw.toLowerCase().includes(m.short.toLowerCase().slice(0, 10)) || banishedRaw.toLowerCase().includes(m.portfolio.toLowerCase().replace('minister of ', ''))));
+    out.banished = /^none/i.test(banishedRaw) ? null : hit || (banishedRaw ? { label: banishedRaw, short: banishedRaw } : null);
+    if (hit) hit.banished = true;
+    out.decree = stripKeys(decree, ['RULING', 'BANISHED']);
+    speech(ruler, 'Royal decree', out.decree);
+    chair(out.ruling === 'UNCLEAR' ? 'The decree is binding, although no one can tell what it says.' : `By royal decree, the answer is ${out.ruling.toLowerCase()}. The vote was 1 to 0.`, 'The Herald');
+    if (out.banished) chair(`${out.banished.label || out.banished.short} has been banished from the realm.`, 'The Herald');
+    renderThrone(ruler, ministers);
+  }
+
+  phase('media'); phaseHead('State media');
+  const editor = mkDelegate(pick(pool()), -1);
+  editor.label = `The People's Daily Truth (${editor.short})`;
+  const text = await ask(editor.model, `You are the editor of the realm's state-run newspaper. ${ruler.label} has decreed ${out.ruling === 'YES' ? 'yes' : out.ruling === 'NO' ? 'no' : 'something'} on the question "${motion}". Write a glowing, propagandistic headline and 2 sentences of coverage. Format:\nHEADLINE: <headline>\n<coverage>`, 200, 'statemedia', { motion, ruling: out.ruling, ruler });
+  if (text) {
+    out.press = { headline: (firstLineValue(text, 'HEADLINE') || '').replace(/^["']|["']$/g, ''), text: stripKeys(text, ['HEADLINE']), by: editor.short };
+    speech(editor, out.press.headline || 'Official news', out.press.text);
+  }
+  return out;
+}
+function renderThrone(ruler, ministers) {
+  $('throne-who').textContent = ruler.label;
+  $('court').innerHTML = ministers.map((m) => `<li class="${m.banished ? 'banished' : ''}">${esc(m.label)}</li>`).join('') || '<li>No ministers. The throne answers only to itself.</li>';
+}
+
+/* =========================================================
+   Report
+   ========================================================= */
+function renderReport(out, adjourned) {
+  S.reportShown = true;
+  const stats = `<p class="stats">This question consumed <b>${fmt(S.tokens)}</b> tokens across <b>${fmt(S.calls)}</b> model calls in <b>${elapsed()}</b>. ${S.failures ? `<b>${fmt(S.failures)}</b> calls went unanswered.` : 'Every call was answered.'}</p>`;
+  const actions = `<div class="actions"><button class="btn" id="again">Bring a new motion</button><button class="btn ghost" id="dl">Download the full record</button></div>`;
+  let html;
+  if (adjourned || !out) {
+    html = `<section class="report"><div class="stamp">ADJOURNED</div><p class="kicker">Session ended early</p><h2>The session was adjourned before a decision was reached.</h2><p class="motion-line">"${esc(S.motion)}"</p>${stats}${actions}</section>`;
+  } else if (out.mode === 'democracy') {
+    const t = out.tally;
+    const answer = out.result === 'PASSED' ? 'yes' : out.result === 'FAILED' ? 'no' : 'nobody knows';
+    const amendments = out.amendResults.length
+      ? `<div><h3>Amendments</h3><ul>${out.amendResults.map((a) => `<li><b>${a.adopted ? 'Adopted' : 'Rejected'} ${a.yea}–${a.nay}.</b> ${esc(a.text)} <span class="by">(${esc(a.by.short)})</span></li>`).join('')}</ul></div>` : '';
+    const findings = out.findings.length
+      ? `<div><h3>Subcommittee findings</h3><ul>${out.findings.map((f) => `<li><b>${esc(f.name)}:</b> ${esc(f.rec.toLowerCase())}</li>`).join('')}</ul></div>` : '';
+    const eis = out.eis ? `<div><h3>Environmental impact${out.eis.risk ? `: risk ${out.eis.risk} of 10` : ''}</h3><p class="body">${esc(clip(out.eis.text, 420))}</p></div>` : '';
+    const fil = out.filibuster ? `<div><h3>Filibuster</h3><p class="body">${esc(out.filibuster.by.label)} held the floor for ${out.filibuster.rounds === 2 ? 'nine hours' : 'an hour'}.${out.filibuster.cloture ? ` Final cloture vote: ${out.filibuster.cloture}.` : ''}</p></div>` : '';
+    const opn = out.opinion ? `<div><h3>Majority opinion</h3><p class="by">Written by ${esc(out.opinion.by.label)}</p><p class="body">${esc(out.opinion.text)}</p></div>` : '';
+    const dis = out.dissent ? `<div><h3>Dissent</h3>${out.dissent.by ? `<p class="by">Written by ${esc(out.dissent.by.label)}</p>` : ''}<p class="body">${esc(out.dissent.text)}</p></div>` : '';
+    const prs = out.press ? `<div><h3>From the press gallery</h3><p class="headline">${esc(out.press.headline)}</p><p class="body">${esc(out.press.text)}</p></div>` : '';
+    html = `<section class="report"><div class="stamp ${out.result === 'PASSED' ? 'pass' : ''}">${out.result}</div>
+      <p class="kicker">Final report of the Grand Committee</p>
+      <h2>${esc(out.title)}</h2>
+      <p class="motion-line">"${esc(out.motion)}"</p>
+      <p class="answer">The Committee's answer: ${answer}. Yeas ${fmt(t.YEA)}, nays ${fmt(t.NAY)}, present ${fmt(t.PRESENT)}, absent ${fmt(t.ABSENT)}.</p>
+      <div class="cols">${amendments}${findings}${eis}${fil}${opn}${dis}${prs}</div>${stats}${actions}</section>`;
+  } else {
+    const stamp = out.ruling === 'YES' ? 'DECREED: YES' : out.ruling === 'NO' ? 'DECREED: NO' : out.ruling === 'NONE' ? 'ANARCHY' : 'DECREED';
+    const ministers = out.ministers.length ? `<div><h3>The court</h3><ul>${out.ministers.map((m) => `<li>${m.banished ? '<b>Banished:</b> ' : ''}${esc(m.label)}</li>`).join('')}</ul></div>` : '';
+    const coups = out.coups.length ? `<div><h3>Coups</h3><p class="body">${out.coups.length} ruler${out.coups.length > 1 ? 's were' : ' was'} deposed for failing to answer: ${esc(out.coups.join(', '))}.</p></div>` : '';
+    const prs = out.press ? `<div><h3>State media</h3><p class="headline">${esc(out.press.headline)}</p><p class="body">${esc(out.press.text)}</p></div>` : '';
+    html = `<section class="report"><div class="stamp pass">${stamp}</div>
+      <p class="kicker">By order of ${esc(out.ruler.label)}</p>
+      <h2>${out.ruling === 'NONE' ? 'The realm has fallen.' : 'A royal decree has been issued.'}</h2>
+      <p class="motion-line">"${esc(out.motion)}"</p>
+      <p class="answer">${out.ruling === 'YES' ? 'The answer is yes. The vote was 1 to 0.' : out.ruling === 'NO' ? 'The answer is no. The vote was 1 to 0.' : 'The answer is unclear, and questioning it is illegal.'}</p>
+      <div class="cols">${out.decree ? `<div><h3>The decree</h3><p class="by">${esc(out.ruler.model)}</p><p class="body">${esc(out.decree)}</p></div>` : ''}${prs}${ministers}${coups}</div>${stats}${actions}</section>`;
+  }
+  $('report-slot').innerHTML = html;
+  $('again').onclick = resetToSetup;
+  $('dl').onclick = downloadRecord;
+  $('report-slot').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+}
+
+function downloadRecord() {
+  const head = `THE RECORD\nMotion: "${S.motion}"\nMode: ${S.mode}${S.rehearsal ? ' (rehearsal)' : ''}\nTokens: ${S.tokens}  Calls: ${S.calls}  Elapsed: ${elapsed()}\n`;
+  const blob = new Blob([head + '\n' + S.record.join('\n')], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `committee-record-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.txt`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* =========================================================
+   Session lifecycle
+   ========================================================= */
+async function convene() {
+  const motion = $('motion').value.trim() || $('motion').placeholder;
+  if (!pool().length) { showErr('There are no models available to seat. Check your API key or turn on rehearsal mode.'); return; }
+  Object.assign(S, { running: true, stop: false, ctrl: new AbortController(), tokens: 0, calls: 0, failures: 0, record: [], delegates: [], votingStarted: false, reportShown: false, motion });
+  $('setup').classList.add('hidden'); $('session').classList.remove('hidden');
+  $('feed').innerHTML = ''; $('report-slot').innerHTML = ''; $('trim').classList.add('hidden');
+  $('s-motion').textContent = `"${motion}"`;
+  $('s-mode').textContent = S.mode === 'democracy' ? 'Democracy' : 'Autocracy';
+  $('throne').classList.add('hidden'); $('roster').classList.remove('hidden'); $('tally').classList.remove('hidden');
+  $('stop').classList.remove('hidden'); $('stop').disabled = false;
+  tally(); renderStats(); startClock(); requestAnimationFrame(seatLoop);
+  window.scrollTo({ top: 0 });
+  let out = null, adjourned = false;
+  try {
+    out = S.mode === 'democracy' ? await democracy(motion) : await autocracy(motion);
+  } catch (e) {
+    if (e instanceof Adjourned) { adjourned = true; chair('The Sergeant-at-Arms has adjourned the session.'); }
+    else { console.error(e); adjourned = true; chair(`The session was interrupted by an unexpected error: ${e.message}`); }
+  }
+  S.running = false; S.seatDirty = true; drawSeats();
+  clearInterval(clockTimer); $('clock').textContent = elapsed();
+  [...$('phases').children].forEach((li) => { li.classList.remove('now'); if (!adjourned && !li.classList.contains('waived')) li.classList.add('done'); });
+  $('stop').classList.add('hidden');
+  renderReport(out, adjourned);
+}
+function resetToSetup() {
+  $('session').classList.add('hidden'); $('setup').classList.remove('hidden');
+  window.scrollTo({ top: 0 }); $('motion').focus();
+}
+function showErr(msg) { $('err').textContent = msg; $('err').classList.remove('hidden'); }
+$('go').onclick = convene;
+$('stop').onclick = () => { S.stop = true; S.ctrl?.abort(); $('stop').disabled = true; };
+$('motion').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) convene(); });
+
+/* =========================================================
+   Rehearsal mode: stand-in replies
+   ========================================================= */
+const noun = (m) => { const w = (m.match(/[A-Za-z]{4,}/g) || ['Matter']).sort((a, b) => b.length - a.length)[0]; return w[0].toUpperCase() + w.slice(1).toLowerCase(); };
+const MOCK = {
+  clerk: (c) => `TITLE: The ${pick(['Comprehensive', 'Bipartisan', 'Emergency', 'Omnibus', 'Landmark'])} ${noun(c.motion)} ${pick(['Accountability', 'Freedom', 'Reform', 'Stabilization', 'Modernization'])} Act of 2026\n`
+    + shuffle(['Condiments and Adjacent Sauces', 'Unforeseen Consequences', 'Vibes', 'Lunch-Adjacent Affairs', 'Things That Could Go Wrong', 'Fiscal Snacking', 'Precedent', 'Regret Prevention']).slice(0, c.k).map((s) => `SUBCOMMITTEE: Subcommittee on ${s}`).join('\n'),
+  statement: (c) => pick([
+    `Mr. Chairman, I have studied this matter for eleven minutes and I am deeply troubled.`,
+    `My constituents in the ${c.d.party} district have spoken, and what they said was "huh?"`,
+    `Let the record show that I support this motion in spirit and oppose it in practice.`,
+    `This is the most important question this body has faced since last Tuesday.`,
+    `I yield the remainder of my time to the gentleman from ${pick(MOCK_MODELS).split('/')[0]}, who is not present.`,
+    `I will not stand idly by while this Committee rushes into ${noun(c.motion).toLowerCase()} without a feasibility study.`,
+  ]) + (c.amd && Math.random() < 0.35 ? `\nAMENDMENT: ${pick(['Require all proceedings to be conducted in a British accent', 'Add a mandatory 20-minute nap before any action is taken', "Rename the motion to include the word 'Freedom'", 'Include a side of guacamole, regardless of cost', 'Establish a task force to study whether a task force is needed', 'Allow a single exception on Fridays'])}` : ''),
+  eis: () => `The proposed action would displace approximately ${rint(12, 900)} cubic feet of air and startle an estimated ${rint(2, 40)} nearby pigeons. Long-term effects on the local vibe remain unknown. The Agency notes with concern a ${rint(3, 97)}% increase in regret.\nRISK: ${rint(1, 10)}`,
+  chair: (c) => `After exhaustive review, the ${c.sub} finds the motion ${pick(['broadly sensible', 'alarmingly reasonable', 'legally ambiguous but emotionally correct', 'a threat to the snack supply'])}. Two members wept during deliberation.\nRECOMMENDATION: ${pick(['FAVORABLE', 'FAVORABLE', 'UNFAVORABLE'])}`,
+  filibuster: (c) => (c.round > 1 ? 'As I was saying… where was I. ' : '') + 'I would like to read into the record my grandmother\'s recipe for potato salad. First, you take the potatoes. Not those potatoes. The good ones. Which brings me to the summer of 1987, when I first saw a cumulonimbus cloud and understood what it meant to be small. My favorite clouds, in order, are cumulus, the one shaped like a boat, and stratus, which I respect but do not love. Returning to the potatoes, '.repeat(2) + 'and that, Mr. Chairman, is why I cannot in good conscience yield.',
+  cloture: () => `CLOTURE: ${pick(['YEA', 'YEA', 'NAY'])}\n${pick(['Enough is enough.', 'I, too, would like to go home.', 'I was enjoying the potato salad part.'])}`,
+  vote: (c) => Array.from({ length: c.n }, (_, i) => `A${i + 1}: ${pick(['YEA', 'NAY'])}`).join('\n') + `\nFINAL: ${Math.random() < 0.08 ? 'ABSTAIN' : pick(['YEA', 'YEA', 'NAY'])}\nREASON: ${pick(['The people demand it.', 'I have not read the bill.', 'My horoscope was clear on this.', 'I never trusted the Subcommittee on Vibes.', 'Principle.', 'Spite, mostly.'])}`,
+  opinion: () => 'Today this body affirms what history will surely record as a turning point for lunch, liberty, and the pursuit of snacks. The majority rejects the notion that small questions deserve small answers. Let it be written.',
+  dissent: () => 'I dissent, and I dissent loudly. Future generations will look back on this vote and ask how we let it happen. My only comfort is that I will be right, eventually.',
+  press: (c) => `HEADLINE: ${pick(['CHAOS IN THE CHAMBER', 'SHOCK VOTE ROCKS COMMITTEE', 'DELEGATES STUNNED'])}: ${c.t.YEA}-${c.t.NAY} VOTE ${c.how.toUpperCase()}\nSources describe the scene as "unprecedented" and also "mostly about potatoes." Markets are expected to react.`,
+  minister: (c) => pick([`Your Radiance, only a fool would hesitate, and you are the opposite of a fool.`, `I humbly suggest whatever you were already going to do, Majesty.`, `The people love you. Also, my budget is due for review.`, `Whatever you decide, I was always on your side, even before you decided it.`]),
+  decree: (c) => `Hear ye! By the authority vested in Us by Ourselves, We have considered the matter with the full weight of Our wisdom. Let the bells ring and the trumpets sound. Our will is done.\nRULING: ${pick(['YES', 'NO'])}\nBANISHED: ${c.ministers.length && Math.random() < 0.7 ? pick(c.ministers).short : 'NONE'}`,
+  statemedia: (c) => `HEADLINE: BELOVED LEADER'S WISDOM ONCE AGAIN PROVEN CORRECT\nCitizens wept with joy in the streets. Historians confirm this was the best decision ever made.`,
+};
+
+boot();
+</script>
+</body>
+</html>
