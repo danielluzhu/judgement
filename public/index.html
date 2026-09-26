@@ -235,6 +235,13 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
 .vmeta b{display:block; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:2px}
 @media (max-width:700px){ .vgrid{grid-template-columns:1fr} .varrow{padding:6px 0; transform:rotate(90deg)} }
 
+/* ---- Sharing ---- */
+.sharebox{margin-top:14px; border:2px dashed var(--ink); padding:12px 14px; font-size:14px}
+.sharebox input{width:100%; font-family:var(--type); font-size:15px; padding:7px 9px; border:2px solid var(--rule); background:var(--paper); margin-top:6px}
+.sharebox .row2{display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap}
+.shared-banner{border:2px solid var(--ink); background:var(--panel); padding:10px 14px; margin:0 0 16px; font-size:14px;
+  display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+.shared-banner b{font-weight:800}
 </style>
 </head>
 <body>
@@ -1712,12 +1719,118 @@ function downloadRecord() {
 }
 
 /* =========================================================
+   Sharing: the whole session — every caucus, every exchange, the result —
+   is written to the server as structured JSON and replayed from a link.
+   Nothing stored is HTML, so a replayed transcript is re-escaped on render.
+   ========================================================= */
+function slimDelegate(d) {
+  return {
+    short: d.short, label: d.label, model: d.model, family: d.family, party: d.party,
+    disp: d.disp ? { name: d.disp.name, lean: d.disp.lean } : null,
+    position: d.position || null, choice: d.choice || null, vote: d.vote || null,
+    reason: d.reason || null, payer: d.payer || null, proposal: d.proposal || null,
+    price: d.price || null, bought: d.bought || null, sub: d.sub,
+  };
+}
+// Delegates appear all over the report object and point back at each other; flatten
+// them on the way out so the transcript is a tree, not a cycle.
+function shareReplacer(key, value) {
+  if (key === 'caucusLine' || key === 'history' || key === 'ctrl') return undefined;
+  if (value && typeof value === 'object' && typeof value.model === 'string' && typeof value.short === 'string' && typeof value.label === 'string') {
+    return { short: value.short, label: value.label, model: value.model, family: value.family, disp: value.disp ? { name: value.disp.name } : null };
+  }
+  return value;
+}
+async function shareSession(out, adjourned) {
+  const box = $('sharebox'); const btn = $('share');
+  if (!box) return;
+  box.classList.remove('hidden');
+  box.innerHTML = '<p>Publishing the record…</p>';
+  if (btn) btn.disabled = true;
+  const payload = {
+    meta: {
+      motion: S.motion, mode: S.mode, title: out ? out.title : null,
+      result: out ? (out.result || out.ruling || null) : null,
+      enacted: out ? (out.enacted || out.instead || null) : null,
+      payer: out ? out.payer || null : null,
+      adjourned: !!adjourned, rehearsal: !!S.rehearsal, conds: S.conds || null,
+      tokens: S.tokens, calls: S.calls, failures: S.failures, elapsed: elapsed(),
+      delegateCount: S.delegates.length, createdAt: new Date().toISOString(),
+    },
+    entries: S.entries,
+    delegates: S.delegates.map(slimDelegate),
+    out: out ? JSON.parse(JSON.stringify(out, shareReplacer)) : null,
+  };
+  try {
+    const res = await fetch('/api/share', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const j = await res.json();
+    if (!res.ok || !j.url) throw new Error(j.error || 'the server refused the record');
+    const url = location.origin + j.url;
+    box.innerHTML = `<b>The record is published.</b> Anyone with this link can read the whole session — every caucus, every exchange, and the result.
+      <input id="shareurl" readonly value="${esc(url)}">
+      <div class="row2"><button class="btn small" id="copy">Copy link</button><a class="btn ghost small" href="${esc(j.url)}" target="_blank" rel="noopener">Open it</a></div>`;
+    const input = $('shareurl');
+    input.onclick = () => input.select();
+    $('copy').onclick = async () => {
+      try { await navigator.clipboard.writeText(url); }
+      catch { input.select(); document.execCommand && document.execCommand('copy'); }
+      $('copy').textContent = 'Copied';
+      setTimeout(() => { if ($('copy')) $('copy').textContent = 'Copy link'; }, 1800);
+    };
+  } catch (e) {
+    box.innerHTML = `<b>The record could not be published.</b> ${esc(String(e.message || e))}`;
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function loadShared(id) {
+  try {
+    const res = await fetch(`/api/session/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('that session is not in the archive');
+    renderShared(await res.json());
+  } catch (e) {
+    document.body.innerHTML = `<div style="max-width:40em;margin:12vh auto;padding:0 20px;font-family:system-ui,sans-serif">
+      <h1>No such session</h1><p>${esc(String(e.message || e))}</p><p><a href="/">Convene your own Committee</a></p></div>`;
+  }
+}
+
+function renderShared(data) {
+  const m = data.meta || {};
+  S.shared = true;
+  S.mode = m.mode || 'democracy';
+  if (S.mode === 'autocracy') document.body.classList.add('autocracy');
+  Object.assign(S, {
+    motion: m.motion || '', tokens: m.tokens || 0, calls: m.calls || 0, failures: m.failures || 0,
+    elapsedFixed: m.elapsed || '0:00', delegates: data.delegates || [], conds: m.conds || null,
+    financial: !!(data.out && data.out.financial), record: (data.entries || []).map(entryText), entries: data.entries || [],
+  });
+  $('setup').classList.add('hidden'); $('session').classList.remove('hidden');
+  $('s-motion').textContent = `"${m.motion || ''}"`;
+  $('s-mode').textContent = S.mode === 'democracy' ? 'Democracy' : 'Autocracy';
+  $('stop').classList.add('hidden');
+  $('throne').classList.add('hidden'); $('roster').classList.add('hidden');
+  $('clock').textContent = S.elapsedFixed;
+  renderStats();
+  if (S.mode === 'democracy' && S.delegates.length) {
+    $('tally').classList.remove('hidden'); $('positions').classList.remove('hidden');
+    tally(); renderPositions();
+  } else { $('tally').classList.add('hidden'); $('positions').classList.add('hidden'); }
+  const names = [...new Set((data.entries || []).filter((e) => e.t === 'phase').map((e) => e.name))];
+  $('phases').innerHTML = names.map((n) => `<li class="done">${esc(n)}</li>`).join('');
+  $('feed').innerHTML = (data.entries || []).map(entryHTML).join('');
+  const when = m.createdAt ? new Date(m.createdAt).toLocaleString() : '';
+  $('feed').insertAdjacentHTML('beforebegin', `<div class="shared-banner"><span><b>A shared session.</b> ${esc(m.delegateCount ? `${fmt(m.delegateCount)} delegates` : '')}${when ? ` · ${esc(when)}` : ''}${m.rehearsal ? ' · rehearsal mode, stand-in delegates' : ''}</span><a class="btn small" href="/">Convene your own</a></div>`);
+  renderReport(data.out, m.adjourned, true);
+  window.scrollTo({ top: 0 });
+}
+
+/* =========================================================
    Session lifecycle
    ========================================================= */
 async function convene() {
   const motion = $('motion').value.trim() || $('motion').placeholder;
   if (!pool().length) { showErr('There are no models available to seat. Check your API key or turn on rehearsal mode.'); return; }
-  Object.assign(S, { running: true, stop: false, ctrl: new AbortController(), tokens: 0, calls: 0, failures: 0, record: [], delegates: [], votingStarted: false, reportShown: false, motion });
+  Object.assign(S, { running: true, stop: false, ctrl: new AbortController(), tokens: 0, calls: 0, failures: 0, record: [], entries: [], delegates: [], votingStarted: false, reportShown: false, motion, conds: readConds(), elapsedFixed: null, shared: false });
   $('setup').classList.add('hidden'); $('session').classList.remove('hidden');
   $('feed').innerHTML = ''; $('report-slot').innerHTML = ''; $('trim').classList.add('hidden');
   $('s-motion').textContent = `"${motion}"`;
@@ -1766,7 +1879,25 @@ const MOCK_PROPOSALS = {
   Diplomat: [(n) => `Half a ${n} now, and revisit the question at 3 p.m.`, (n) => `The ${n}, but split with a colleague`],
   default: [(n) => `Tacos instead of the ${n}`, (n) => `The ${n} with a drink added`, (n) => `Soup. Just soup.`, (n) => `A completely different ${n} from across the street`],
 };
+const MOCK_PRICES = [
+  'a guarantee in writing that my caucus chairs the next subcommittee',
+  'a standing order of the same thing for me, every Friday, in perpetuity',
+  'the motion renamed after my district',
+  'a rider exempting my constituents from the whole arrangement',
+  'first refusal on any leftovers, and a seat nearer the window',
+  'a formal apology from the Subcommittee on Vibes, read aloud',
+];
 const MOCK = {
+  parl: (c) => {
+    const ok = Math.random() > 0.35;
+    const breaks = pick(['it exceeds the budget ceiling', 'it names the wrong vendor', 'no quotes were obtained', 'it cannot be done by the deadline']);
+    return `COST: $${rint(6, 60)}\nCOMPLIANT: ${ok ? 'YES' : 'NO'}\nBREAKS: ${ok ? 'NONE' : breaks}\nRULING: ${ok ? pick(['The substitute is in order, regrettably.', 'I can find no fault, and I did look.', 'In order. The Chair may proceed.']) : pick(['Out of order, and not close.', 'The petitioner was explicit, and this is not that.', 'I have read the conditions twice. This fails both times.'])}`;
+  },
+  leader: (c) => {
+    const n = c.asks.length;
+    const take = shuffle(Array.from({ length: n }, (_, i) => i + 1)).slice(0, Math.max(1, Math.round(n / 2)));
+    return `${pick(['I have made the arithmetic work, as I always do.', 'Governing is the art of paying for votes with things that are not mine.', 'Two of these are reasonable. The rest are extortion, and I respect that.'])} The bill will carry.\nGRANT: ${take.sort().map((i) => 'P' + i).join(', ')}`;
+  },
   clerk: (c) => `TITLE: The ${pick(['Comprehensive', 'Bipartisan', 'Emergency', 'Omnibus', 'Landmark'])} ${noun(c.motion)} ${pick(['Accountability', 'Freedom', 'Reform', 'Stabilization', 'Modernization'])} Act of 2026\n`
     + shuffle(['Condiments and Adjacent Sauces', 'Unforeseen Consequences', 'Vibes', 'Lunch-Adjacent Affairs', 'Things That Could Go Wrong', 'Fiscal Snacking', 'Precedent', 'Regret Prevention']).slice(0, c.k).map((s) => `SUBCOMMITTEE: Subcommittee on ${s}`).join('\n'),
   statement: (c) => {
@@ -1778,6 +1909,7 @@ const MOCK = {
       AMEND: [`The idea is sound but the form is wrong. I have a better ${n}.`, `Let the record show that I support this motion in spirit and would replace it in practice.`, `Why stop at ${n}? I move that we think bigger.`] }[pos];
     const proposal = pos === 'AMEND' ? `\nPROPOSAL: ${pick(MOCK_PROPOSALS[c.d.disp.name] || MOCK_PROPOSALS.default)(n)}` : '\nPROPOSAL: NONE';
     return pick(line) + `\nPOSITION: ${pos}` + proposal + (c.money ? `\nPAYER: ${mockPayer(c.d)}` : '')
+      + (c.trade && pos === 'AGAINST' && Math.random() < 0.7 ? `\nPRICE: ${pick(MOCK_PRICES)}` : '')
       + (c.amd && Math.random() < 0.25 ? `\nAMENDMENT: ${pick(['Require all proceedings to be conducted in a British accent', 'Add a mandatory 20-minute nap before any action is taken', "Rename the motion to include the word 'Freedom'", 'Establish a task force to study whether a task force is needed', 'Allow a single exception on Fridays'])}` : '');
   },
   reply: (c) => `${c.a ? pick(['A convenient answer, and I do not believe a word of it.', 'The petitioner speaks plainly. I am unsettled by this.', 'Noted. The record will show that I was not persuaded.', 'That is the first honest thing said in this chamber all day.']) : pick(['Silence. The gallery will draw its own conclusions.', 'The petitioner refuses, which tells me everything.'])}\nFOLLOWUP: ${Math.random() < 0.45 ? pick(['And who told you that?', 'Would you say that under oath a second time?', 'Then why are we here?', 'Has this been budgeted?']) : 'NONE'}${c.money ? `\nPAYER: ${mockPayer(c.d)}` : ''}`,
@@ -1811,7 +1943,8 @@ const MOCK = {
   statemedia: (c) => `HEADLINE: BELOVED LEADER'S WISDOM ONCE AGAIN PROVEN CORRECT\nCitizens wept with joy in the streets. Historians confirm this was the best decision ever made.`,
 };
 
-boot();
+const sharedId = location.pathname.match(/^\/s\/([a-z0-9]{10})$/);
+if (sharedId) loadShared(sharedId[1]); else boot();
 </script>
 </body>
 </html>
