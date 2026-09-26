@@ -260,6 +260,14 @@ const server = http.createServer(async (req, res) => {
       const p = await getPlan();
       return send(res, 200, { hasKey: !!KEY, plan: p, concurrency: capacity || 2 });
     }
+    // The verified bench, written by scripts/probe-bench.js. Absent is fine: the app
+    // falls back to picking warm-looking models by organisation.
+    if (req.method === 'GET' && url.pathname === '/api/bench') {
+      try {
+        const j = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'bench.json'), 'utf8'));
+        return send(res, 200, { models: Array.isArray(j.models) ? j.models : [], generatedAt: j.generatedAt || null });
+      } catch { return send(res, 200, { models: [], generatedAt: null }); }
+    }
     if (req.method === 'GET' && url.pathname === '/api/models') {
       if (!KEY) return send(res, 200, { models: [] });
       const list = await getModels();

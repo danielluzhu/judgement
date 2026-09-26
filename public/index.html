@@ -453,7 +453,7 @@ const S = {
   tokens: 0, calls: 0, failures: 0, t0: 0, record: [], entries: [], delegates: [], seatDirty: true,
   conds: null, elapsedFixed: null, shared: false,
   callMs: 35000, phaseEnd: null, phaseName: null, phaseKey: null, warmOnly: false, silent: [],
-  sessionMs: 180000, sessionEnd: null, activePhases: null, timeUp: false,
+  sessionMs: 180000, sessionEnd: null, activePhases: null, timeUp: false, bench: [], benchAt: null,
 };
 
 const MOCK_MODELS = [
@@ -487,6 +487,10 @@ async function boot() {
       const j = await (await fetch('/api/models')).json();
       S.models = (j.models || []).map((m) => m.id);
     } catch { S.models = []; }
+    try {
+      const b = await (await fetch('/api/bench')).json();
+      S.bench = b.models || []; S.benchAt = b.generatedAt || null;
+    } catch { S.bench = []; }
   }
   if (!S.hasKey || !S.models.length) {
     S.rehearsal = true;
@@ -509,6 +513,12 @@ async function boot() {
 const WARM_ORGS = /^(mistralai|qwen|nousresearch|google|microsoft|teknium|openchat|huggingfaceh4|upstage|sao10k|thedrummer|anthracite-org|cognitivecomputations|gryphe|undi95|nvidia|allenai|internlm|tiiuae|nexusflow|princeton-nlp|abacusai|steelskull|eva-unit-01|nothingiisreal|marinaraspaghetti|weyaxi|jondurbin|wizardlmteam|latitudegames|meta-llama|deepseek-ai|01-ai|openbmb|ibm-granite|mlabonne|failspy|crestf411|sophosympatheia)\//;
 const BIG_MODEL = /\b(2[0-9]|[3-9][0-9]|[1-9][0-9]{2})(\.\d)?b\b/i;
 function warmSubset(list) {
+  // First choice: models actually observed to answer, and answer quickly.
+  if (S.bench && S.bench.length) {
+    const have = new Set(list.map((m) => m.toLowerCase()));
+    const verified = S.bench.filter((m) => have.has(m.toLowerCase()));
+    if (verified.length >= 4) return verified;
+  }
   const warm = list.filter((m) => WARM_ORGS.test(m.toLowerCase()) && !BIG_MODEL.test(m));
   return warm.length >= 8 ? warm : list;
 }
@@ -523,7 +533,7 @@ function renderConn() {
     $('conn').innerHTML = `<span class="dot"></span>Rehearsing with <b>${n}</b> stand-in delegates.`;
   } else {
     const planName = S.plan?.name ? esc(S.plan.name) : 'your plan';
-    $('conn').innerHTML = `<span class="dot live"></span>Connected to Featherless on <b>${planName}</b> with <b>${fmt(n)}</b> models eligible to serve${S.warmOnly ? ` <i>(warm models only, out of ${fmt(S.models.length)})</i>` : ''} and <b>${S.concurrency}</b> concurrency units.`;
+    $('conn').innerHTML = `<span class="dot live"></span>Connected to Featherless on <b>${planName}</b> with <b>${fmt(n)}</b> models eligible to serve${S.warmOnly ? ` <i>(${S.bench.length ? 'verified bench' : 'warm models'} only, out of ${fmt(S.models.length)})</i>` : ''} and <b>${S.concurrency}</b> concurrency units.`;
   }
 }
 function refreshAllChip() { $('all-chip').textContent = `Everyone (${fmt(pool().length)})`; }
