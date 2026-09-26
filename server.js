@@ -10,6 +10,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 loadDotEnv();
 const PORT = Number(process.env.PORT) || 3000;
@@ -145,15 +146,67 @@ async function chat({ model, prompt, max_tokens = 200, temperature = 0.9 }, isGo
   }
 }
 
+// ---------- Shared sessions ----------
+// A shared session is a self-contained JSON transcript written to disk. No database,
+// no dependencies: one file per session, which keeps `node server.js` a single command.
+const SESSIONS = path.join(__dirname, 'data', 'sessions');
+const ID_RE = /^[a-z0-9]{10}$/;
+const SHARE_MAX = 6e6; // a 200-delegate session with full debate runs well under this
+
+function newId() {
+  const alpha = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const b = crypto.randomBytes(10);
+  let out = '';
+  for (let i = 0; i < 10; i++) out += alpha[b[i] % alpha.length];
+  return out;
+}
+function sessionFile(id) { return path.join(SESSIONS, `${id}.json`); }
+function readSession(id) {
+  if (!ID_RE.test(id)) return null;
+  try { return JSON.parse(fs.readFileSync(sessionFile(id), 'utf8')); } catch { return null; }
+}
+function writeSession(id, obj) {
+  fs.mkdirSync(SESSIONS, { recursive: true });
+  fs.writeFileSync(sessionFile(id), JSON.stringify(obj));
+}
+function escHtml(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Serve the single-page app, optionally with Open Graph tags so a shared link
+// unfurls with the bill title and what the petitioner actually got.
+function servePage(res, meta) {
+  let html;
+  try { html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8'); }
+  catch (e) { res.writeHead(500); return res.end('index.html is missing'); }
+  if (meta) {
+    const title = escHtml(meta.title || 'The Committee');
+    const desc = escHtml(clipText(meta.description || '', 300));
+    const tags = [
+      `<meta property="og:type" content="article">`,
+      `<meta property="og:title" content="${title}">`,
+      `<meta property="og:description" content="${desc}">`,
+      `<meta property="og:site_name" content="The Committee">`,
+      `<meta name="twitter:card" content="summary_large_image">`,
+      `<meta name="twitter:title" content="${title}">`,
+      `<meta name="twitter:description" content="${desc}">`,
+      `<meta name="description" content="${desc}">`,
+    ].join('\n');
+    html = html.replace('</head>', `${tags}\n</head>`).replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`);
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(html);
+}
+function clipText(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s; }
+
 // ---------- HTTP ----------
 function send(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(obj));
 }
-function readBody(req) {
+function readBody(req, max = 1e6) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 1e6) req.destroy(); });
+    req.on('data', (c) => { data += c; if (data.length > max) req.destroy(); });
     req.on('end', () => { try { resolve(JSON.parse(data || '{}')); } catch (e) { reject(e); } });
     req.on('error', reject);
   });
@@ -163,8 +216,34 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return fs.createReadStream(path.join(__dirname, 'public', 'index.html')).pipe(res);
+      return servePage(res, null);
+    }
+    // A shared session: same app, but with unfurl tags for the link preview.
+    const shareView = url.pathname.match(/^\/s\/([a-z0-9]+)$/);
+    if (req.method === 'GET' && shareView) {
+      const rec = readSession(shareView[1]);
+      if (!rec) { res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end('<h1>No such session</h1><p>That link has expired or never existed. <a href="/">Convene a new one.</a></p>'); }
+      const m = rec.meta || {};
+      return servePage(res, {
+        title: m.title || 'The Committee',
+        description: m.enacted ? `Asked: "${m.motion}" \u2014 Got: ${m.enacted}` : m.motion || '',
+      });
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/api/session/')) {
+      const rec = readSession(url.pathname.slice('/api/session/'.length));
+      if (!rec) return send(res, 404, { error: 'no such session' });
+      return send(res, 200, rec);
+    }
+    if (req.method === 'POST' && url.pathname === '/api/share') {
+      let body;
+      try { body = await readBody(req, SHARE_MAX); }
+      catch { return send(res, 413, { error: 'That session is too large to share.' }); }
+      if (!body || !body.meta || !body.meta.motion) return send(res, 400, { error: 'nothing to share' });
+      const id = newId();
+      body.meta.sharedAt = new Date().toISOString();
+      try { writeSession(id, body); }
+      catch (e) { return send(res, 500, { error: 'could not save the session: ' + String(e.message || e) }); }
+      return send(res, 200, { id, url: `/s/${id}` });
     }
     if (req.method === 'GET' && url.pathname === '/api/status') {
       const p = await getPlan();
