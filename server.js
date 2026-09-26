@@ -16,7 +16,7 @@ loadDotEnv();
 const PORT = Number(process.env.PORT) || 3000;
 const API = 'https://api.featherless.ai/v1';
 const KEY = process.env.FEATHERLESS_API_KEY || '';
-const TIMEOUT_MS = Number(process.env.TIMEOUT_MS) || 120000; // cold models can take a while to load
+const TIMEOUT_MS = Number(process.env.TIMEOUT_MS) || 35000; // a model slower than this will not make anyone's demo
 let capacity = Number(process.env.CONCURRENCY) || 0; // 0 = read from /v1/plan
 
 function loadDotEnv() {
@@ -134,7 +134,15 @@ async function chat({ model, prompt, max_tokens = 200, temperature = 0.9 }, isGo
         if ([429, 502, 503].includes(r.status)) { await sleep(1500 * 2 ** attempt); continue; }
         if (!r.ok) return { error: body.slice(0, 300), status: r.status };
         const j = JSON.parse(body);
-        return { text: cleanText(j.choices?.[0]?.message?.content), usage: j.usage || null };
+        const raw = j.choices?.[0]?.message?.content;
+        // A 200 with no choices is not a success: say so, rather than handing back
+        // an empty string the chamber silently reads as an absent delegate.
+        if (raw == null) return { error: (body || '').slice(0, 200) || 'no choices in response', status: r.status };
+        let text = cleanText(raw);
+        // A reasoning model that never closed its <think> tag would otherwise be erased.
+        if (!text && raw.trim()) text = raw.replace(/<\/?think>/gi, '').trim().slice(-1500);
+        if (!text) return { error: 'the model returned an empty message', status: r.status };
+        return { text, usage: j.usage || null };
       } catch (e) {
         if (e.name === 'AbortError') return { error: 'timed out', status: 408 };
         if (attempt === 3) return { error: String(e.message || e) };
