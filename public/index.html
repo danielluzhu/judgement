@@ -1162,6 +1162,54 @@ async function democracy(motion) {
     if (out.caucusLines.length) chair(`Caucus lines: ${out.caucusLines.map((c) => `${c.name} ${c.line.toLowerCase()}${c.proposal ? ' (with a substitute)' : ''}`).join('; ')}.`, 'The Clerk');
   }
 
+  /* 4b. Horse-trading: the opposition names its price and leadership decides what the bill can afford */
+  if (P.trade) {
+    const opponents = D.filter((d) => d.position === 'AGAINST' && d.price);
+    if (opponents.length) {
+      phase('trade'); phaseHead('Horse-trading', 'trade');
+      chair(`${fmt(opponents.length)} delegate${opponents.length === 1 ? ' has' : 's have'} named a price for their support. The Chair reminds the chamber that this is how everything gets done.`);
+      // One asking delegate per caucus, largest blocs first: buying a whip buys a bloc.
+      const seen = new Set(); const asks = [];
+      for (const d of opponents.slice().sort((a, b) => (b.caucusLine?.size || 1) - (a.caucusLine?.size || 1))) {
+        if (asks.length >= 5) break;
+        const key = d.family || d.short;
+        if (seen.has(key)) continue;
+        seen.add(key); asks.push(d);
+      }
+      for (const d of asks) speech(d, 'names a price', d.price, 'price', 'AGAINST');
+      const backers = D.filter((d) => d.statement && d.position !== 'AGAINST');
+      const leader = pick(backers.length ? backers : D.filter((d) => d.statement));
+      if (leader) {
+        markSeat(leader, 'speaking');
+        const list = asks.map((d, i) => `P${i + 1}: ${d.short} of the ${d.family} caucus wants: ${d.price}`).join('\n');
+        const text = await ask(leader.model, `${PREFACE}\n${persona(leader)}\nYou are the Majority Leader and your job is to get the motion "${motion}" passed. The opposition has named its prices:\n${list}${condsBlock(C)}\nEvery concession you grant wins a vote but makes the bill uglier, and you may not grant anything that breaks the petitioner's binding conditions. In 2 sentences, say which prices you will meet and which you refuse, in character. Then add:\nGRANT: a comma-separated list of the ones you accept, e.g. P1, P3 — or NONE`, 260, 'leader', { motion, asks, leader });
+        markSeat(leader, 'seated');
+        if (!text) {
+          chair(`${leader.short} was to negotiate on behalf of the bill but could not be found. No deals were struck.`);
+        } else {
+          const grantRaw = (firstLineValue(text, 'GRANT') || '').toUpperCase();
+          const body = stripKeys(text, ['GRANT']);
+          if (body) speech(leader, 'Majority Leader, on the deals', body, 'deal');
+          const granted = /\bNONE\b/.test(grantRaw) ? [] : asks.filter((_, i) => new RegExp(`\\bP${i + 1}\\b`).test(grantRaw));
+          for (const d of granted) {
+            d.bought = d.price;
+            out.concessions.push({ to: d, text: d.price });
+            setPosition(d, 'FOR');
+            d.history.push(`The Majority Leader met your price ("${clip(d.price, 90)}") in exchange for your vote. You gave your word.`);
+            speech(d, 'accepts the deal', `My price has been met. ${pick(['I withdraw my objection.', 'The Committee has my vote.', 'I was never truly opposed.', 'Principles are expensive; mine were reasonably priced.'])}`, 'deal', 'FOR');
+          }
+          renderPositions();
+          chair(granted.length
+            ? `${granted.length} deal${granted.length === 1 ? '' : 's'} struck: ${granted.map((d) => `${d.short} in exchange for ${clip(d.price, 70)}`).join('; ')}. The concessions are attached to the bill.`
+            : 'The Majority Leader refused every price. The opposition is unbought and unhappy.', 'The Clerk');
+        }
+      }
+    } else if (D.some((d) => d.position === 'AGAINST')) {
+      phase('trade'); phaseHead('Horse-trading', 'trade');
+      chair('The opposition named no price. Either they cannot be bought or nobody thought to ask.');
+    }
+  }
+
   /* 5. Environmental impact study */
   if (P.eis) {
     phase('eis'); phaseHead('Environmental impact study');
@@ -1200,7 +1248,7 @@ async function democracy(motion) {
   /* Pick substitutes and riders for the floor */
   const caucusSubs = out.caucusLines.filter((c) => c.proposal).sort((a, b) => b.size - a.size).map((c) => ({ text: c.proposal, by: c.whip, from: `${c.name} caucus` }));
   const soloSubs = shuffle(out.proposals.filter((p) => !caucusSubs.some((c) => c.text === p.text))).map((p) => ({ text: p.text, by: p.by, from: p.by.short }));
-  const floorSubs = caucusSubs.concat(soloSubs).slice(0, 3);
+  let floorSubs = caucusSubs.concat(soloSubs).slice(0, 3);
   out.substitutes = floorSubs;
   const floorAmd = P.amd ? shuffle(out.amendments).slice(0, 3) : [];
   if (out.proposals.length + caucusSubs.length) chair(`${out.proposals.length + caucusSubs.length} substitute motions were offered. The Rules Committee has allowed ${floorSubs.length} to reach the floor: ${floorSubs.map((s, i) => `S${i + 1} "${s.text}" (${s.from})`).join('; ')}.`);
@@ -1208,6 +1256,34 @@ async function democracy(motion) {
   if (P.amd) {
     if (out.amendments.length > floorAmd.length) chair(`${out.amendments.length} riders were introduced. The Rules Committee, citing time, has allowed ${floorAmd.length} to reach the floor.`);
     else if (!out.amendments.length) chair('No riders were introduced. Several delegates appear disappointed in themselves.');
+  }
+
+  /* 6b. The Parliamentarian rules each substitute against the petitioner's conditions */
+  if (C.any && floorSubs.length) {
+    phase('rules'); phaseHead('Ruling of the Parliamentarian', 'rules');
+    const parl = mkDelegate(pick(pool()), -1);
+    parl.label = `The Parliamentarian (${parl.short})`; parl.family = null; parl.disp = null;
+    const condText = condsList(C).map((x) => '- ' + x).join('\n');
+    chair(`The Parliamentarian will rule on whether each version on the floor is in order under Standing Rule 7.`, 'The Clerk');
+    const inOrder = [];
+    for (const [i, sb] of floorSubs.entries()) {
+      const text = await ask(parl.model, `${PREFACE}\nYou are the Parliamentarian of the Grand Committee: a humourless stickler who enjoys ruling things out of order.\nThe petitioner's binding conditions:\n${condText}\nA substitute motion has been offered: "${sb.text}" (offered by ${sb.from}).\nRule on it. Be strict but fair — rule it OUT OF ORDER only if it plainly breaks one of the conditions above.\nReply in exactly this format:\nCOST: your best estimate of what this costs, like $14, or NONE if it costs nothing\nCOMPLIANT: YES or NO\nBREAKS: which condition it breaks, in a few words, or NONE\nRULING: one witty sentence of justification`, 220, 'parl', { sb, C });
+      const cost = text ? firstLineValue(text, 'COST') : null;
+      const compliant = text ? !/\bNO\b/i.test((firstLineValue(text, 'COMPLIANT') || 'YES').toUpperCase()) : true;
+      const breaks = text ? firstLineValue(text, 'BREAKS') : null;
+      const ruling = (text && firstLineValue(text, 'RULING')) || (compliant ? 'The substitute is in order.' : 'The substitute is out of order.');
+      const rec = { key: `S${i + 1}`, text: sb.text, from: sb.from, cost: cost && !/^none\b/i.test(cost) ? cost : null, compliant, breaks: breaks && !/^none\b/i.test(breaks) ? breaks : null, ruling };
+      out.rulings.push(rec);
+      speech(parl, `S${i + 1}: ${compliant ? 'in order' : 'OUT OF ORDER'}${rec.cost ? ` · ${rec.cost}` : ''}`, `"${clip(sb.text, 120)}" — ${ruling}${rec.breaks ? ` (breaks: ${rec.breaks})` : ''}`, 'rules', compliant ? null : 'AGAINST');
+      if (compliant) inOrder.push(sb); else out.struck.push(rec);
+    }
+    if (out.struck.length) {
+      floorSubs = inOrder;
+      out.substitutes = floorSubs;
+      chair(`${out.struck.length} substitute${out.struck.length === 1 ? ' is' : 's are'} struck from the floor for breaking the petitioner's conditions: ${out.struck.map((r) => `${r.key} (${r.breaks || 'non-compliant'})`).join('; ')}. ${floorSubs.length ? `${floorSubs.length} remain${floorSubs.length === 1 ? 's' : ''}.` : 'The floor is left with the original motion alone.'}`, 'The Clerk');
+    } else {
+      chair('Every substitute survives the Parliamentarian. The Chair is faintly disappointed.', 'The Clerk');
+    }
   }
 
   /* 7. Filibuster */
