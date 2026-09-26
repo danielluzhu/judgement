@@ -29,7 +29,10 @@ function loadDotEnv() {
   } catch { /* no .env, that's fine */ }
 }
 
-const auth = () => ({ Authorization: `Bearer ${KEY}` });
+// Featherless sits behind a filter that answers "Gone." with a 404 to requests whose
+// User-Agent looks like a bare runtime (Node's fetch sends "node"), so identify the app.
+const UA = 'TheCommittee/1.1 (+https://github.com/danielluzhu/judgement)';
+const auth = () => ({ Authorization: `Bearer ${KEY}`, 'User-Agent': UA });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- Plan + model catalogue ----------
