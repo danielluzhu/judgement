@@ -242,6 +242,26 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
 .shared-banner{border:2px solid var(--ink); background:var(--panel); padding:10px 14px; margin:0 0 16px; font-size:14px;
   display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
 .shared-banner b{font-weight:800}
+
+/* ---- Speed controls and the unresponsive ---- */
+.warmline{display:block; font-size:13.5px; margin:8px 0 0}
+.timecap{display:flex; align-items:center; gap:8px; margin:10px 0 0; font-size:14px; flex-wrap:wrap}
+.timecap select{padding:5px 8px; border:2px solid var(--rule); background:var(--paper)}
+#left{color:var(--muted)}
+#left.urgent{color:var(--nay)}
+.silent-panel{border:2px solid var(--present); padding:10px 12px; margin-top:12px; background:var(--panel)}
+.silent-panel .pos-head{color:var(--present)}
+.silent-panel .sub{font-size:12.5px; color:var(--muted); margin-bottom:6px}
+.silent-list{list-style:none; margin:0; padding:0; font-size:13px; max-height:190px; overflow-y:auto}
+.silent-list li{display:flex; gap:6px; align-items:baseline; padding:2px 0; border-bottom:1px solid var(--rule)}
+.silent-list .sname{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.silent-list .smiss{font-weight:800; color:var(--present)}
+.silent-list i{font-size:11.5px; color:var(--muted); flex-basis:100%}
+.silent-list .smore{color:var(--muted); font-style:italic}
+.silent-badge{display:inline-block; font-size:11px; font-weight:800; color:var(--present);
+  border:1.5px solid var(--present); border-radius:99px; padding:0 6px; margin-left:6px}
+.pos ul li.is-silent{opacity:.75}
+.absentee{border-left:3px solid var(--present); padding-left:9px}
 </style>
 </head>
 <body>
@@ -272,6 +292,16 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
         <label class="tradeline"><input type="checkbox" id="p-trade" checked> Horse-trading: opponents may name a price for their support</label>
       </details>
 
+      <div class="timecap">
+        <label for="cap">The Committee must rise within</label>
+        <select id="cap">
+          <option value="60000">1 minute</option>
+          <option value="180000" selected>3 minutes</option>
+          <option value="300000">5 minutes</option>
+          <option value="600000">10 minutes</option>
+          <option value="0">no limit, however long it takes</option>
+        </select>
+      </div>
       <div class="convene">
         <button class="btn" id="go">Convene the Committee</button>
         <span class="eta" id="eta"></span>
@@ -294,6 +324,7 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
           <button class="chip" data-n="all" id="all-chip">Everyone</button>
           <input class="num" id="dcount" type="number" min="3" value="50" aria-label="Custom delegate count">
         </div>
+        <label class="warmline"><input type="checkbox" id="warm" checked> Seat only well-known, already-warm models <span class="note" style="margin:0">a random model answers in ~16s; a popular one in ~6s</span></label>
         <h3>Procedures</h3>
         <div class="checks">
           <label><input type="checkbox" id="p-sub" checked> Subcommittees</label>
@@ -351,7 +382,7 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
         <div class="burn">
           <div class="n" id="tokens">0</div>
           <div class="l">tokens burned on this question</div>
-          <div class="meta"><span><b id="calls">0</b> model calls</span><span><b id="clock">0:00</b> elapsed</span></div>
+          <div class="meta"><span><b id="calls">0</b> model calls</span><span><b id="clock">0:00</b> elapsed</span><span><b id="left"></b></span></div>
         </div>
         <div class="tally" id="tally">
           <div class="yea"><div class="n" id="t-yea">0</div><div class="l">Yea</div></div>
@@ -383,6 +414,11 @@ body.autocracy .stamp{mix-blend-mode:normal; border-color:var(--yea); color:var(
             <div class="pos-head" style="margin-top:12px">Who is paying?</div>
             <ul class="payers" id="payers"></ul>
           </div>
+        </div>
+        <div class="silent-panel hidden" id="silent-panel">
+          <div class="pos-head">Delegates who did not answer</div>
+          <div class="sub" id="silent-count"></div>
+          <ul class="silent-list" id="silent-list"></ul>
         </div>
         <div class="throne hidden" id="throne">
           <div class="crown">Seated on the throne</div>
@@ -416,7 +452,8 @@ const S = {
   rehearsal: false, size: 50, running: false, stop: false, ctrl: null,
   tokens: 0, calls: 0, failures: 0, t0: 0, record: [], entries: [], delegates: [], seatDirty: true,
   conds: null, elapsedFixed: null, shared: false,
-  callMs: 35000, phaseEnd: null, phaseName: null, warmOnly: false, silent: [],
+  callMs: 35000, phaseEnd: null, phaseName: null, phaseKey: null, warmOnly: false, silent: [],
+  sessionMs: 180000, sessionEnd: null, activePhases: null, timeUp: false,
 };
 
 const MOCK_MODELS = [
@@ -459,6 +496,8 @@ async function boot() {
       ? 'The model list could not be loaded, so the Committee will rehearse with stand-ins.'
       : 'No Featherless API key was found. Add FEATHERLESS_API_KEY to .env and restart the server to seat real models.';
   }
+  S.warmOnly = $('warm').checked;
+  S.sessionMs = Number($('cap').value) || 0;
   renderConn();
   refreshAllChip();
   updateEta();
@@ -484,7 +523,7 @@ function renderConn() {
     $('conn').innerHTML = `<span class="dot"></span>Rehearsing with <b>${n}</b> stand-in delegates.`;
   } else {
     const planName = S.plan?.name ? esc(S.plan.name) : 'your plan';
-    $('conn').innerHTML = `<span class="dot live"></span>Connected to Featherless on <b>${planName}</b> with <b>${fmt(n)}</b> models eligible to serve and <b>${S.concurrency}</b> concurrency units.`;
+    $('conn').innerHTML = `<span class="dot live"></span>Connected to Featherless on <b>${planName}</b> with <b>${fmt(n)}</b> models eligible to serve${S.warmOnly ? ` <i>(warm models only, out of ${fmt(S.models.length)})</i>` : ''} and <b>${S.concurrency}</b> concurrency units.`;
   }
 }
 function refreshAllChip() { $('all-chip').textContent = `Everyone (${fmt(pool().length)})`; }
@@ -556,8 +595,20 @@ function updateEta() {
   const asks = S.mode === 'democracy' ? $('p-ask').checked : $('a-ask').checked;
   const pause = asks ? ' The session will pause while delegates question you.' : '';
   if (S.rehearsal) { $('eta').textContent = `About ${fmt(calls)} pretend model calls. No tokens will be harmed.${pause}`; return; }
-  const secs = (calls * 9) / Math.max(1, S.concurrency);
-  $('eta').textContent = `About ${fmt(calls)} model calls, which is roughly ${humanTime(secs)} at your plan's concurrency. Actual time depends on how many models have to wake up.${pause}`;
+  // measured: a random long-tail model answers in ~17s, a popular one in ~7s
+  const avg = S.warmOnly ? 7 : 17;
+  const d = S.mode === 'democracy' ? delegateCount() : 1;
+  const waves = Math.max(1, Math.ceil(d / poolLimit()));
+  const secs = S.mode === 'democracy' ? waves * avg * 2 + avg * 6 : avg * 4;
+  if (!S.sessionMs) {
+    $('eta').textContent = `About ${fmt(calls)} model calls, roughly ${humanTime(secs)}, with no time limit set.${pause}`;
+    return;
+  }
+  const cap = S.sessionMs / 1000;
+  const fits = secs <= cap * 0.9;
+  $('eta').textContent = `The Committee rises after ${humanTime(cap)}. About ${fmt(calls)} model calls (~${humanTime(secs)} of work): `
+    + (fits ? 'it should finish with time in hand.' : `that will not all fit, so delegates slow to wake will be recorded as not having answered${S.warmOnly ? '' : ' \u2014 try warm models only'}.`)
+    + pause;
 }
 function subCount(d) { return Math.max(2, Math.min(6, Math.round(d / 8))); }
 
@@ -573,15 +624,35 @@ function budgetFor(n) {
   const waves = Math.max(1, Math.ceil((n || 1) / poolLimit()));
   return waves * S.callMs * 1.6 + 5000;
 }
-function startPhaseBudget(n) { S.phaseEnd = Date.now() + budgetFor(n); }
 function clearPhaseBudget() { S.phaseEnd = null; }
+
+/* The Committee rises at a fixed hour. Each phase is given a share of whatever time is
+   left, weighted by how much work it is, and never more than it could actually use, so
+   time saved early flows to the phases that follow. The roll call is protected: whatever
+   else is cut, the chamber votes. */
+const PHASE_W = { order: 4, hear: 26, ask: 10, cau: 12, trade: 6, eis: 4, rep: 8, rules: 6, fil: 6, vote: 22, enact: 5, op: 6,
+  summon: 5, counsel: 8, decree: 10, media: 4 };
+const PHASE_SEQ = ['order', 'summon', 'hear', 'ask', 'counsel', 'cau', 'trade', 'eis', 'rep', 'rules', 'fil', 'vote', 'decree', 'enact', 'op', 'media'];
+function beginPhase(k, n) {
+  S.phaseKey = k;
+  const need = budgetFor(n);
+  if (!S.sessionEnd) { S.phaseEnd = Date.now() + need; return; }
+  const i = PHASE_SEQ.indexOf(k);
+  const later = PHASE_SEQ.slice(i < 0 ? 0 : i).filter((x) => !S.activePhases || S.activePhases.has(x));
+  const totalW = later.reduce((a, x) => a + (PHASE_W[x] || 4), 0) || 1;
+  const remain = Math.max(4000, S.sessionEnd - Date.now());
+  let share = remain * ((PHASE_W[k] || 4) / totalW);
+  if (k === 'vote' || k === 'decree') share = Math.max(share, Math.min(remain * 0.55, 50000));
+  if (k === 'enact') share = Math.max(share, Math.min(remain * 0.5, 20000));
+  S.phaseEnd = Date.now() + Math.max(3000, Math.min(share, need));
+}
 
 async function ask(model, prompt, maxTokens, kind, ctx = {}) {
   if (S.stop) throw new Adjourned();
   const left = S.phaseEnd ? S.phaseEnd - Date.now() : Infinity;
   const limit = Math.min(S.callMs, left);
   S.calls++; renderStats();
-  if (limit <= 0) { S.failures++; renderStats(); return null; } // the phase has run out of time
+  if (limit <= 0) { S.failures++; S.timeUp = true; renderStats(); return null; } // out of time
   let r;
   try {
     if (S.rehearsal) {
@@ -689,6 +760,7 @@ function askUser(d, question, kind) {
     const id = `q${S.calls}-${Math.random().toString(36).slice(2, 7)}`;
     const faction = d.family && d.family !== 'Unaffiliated' ? `${d.family} caucus` : (d.party !== 'Independent' ? `${d.party} party` : 'Independent');
     const entry = { t: 'qa', label: d.label, faction, disp: d.disp?.name || null, kind, q: question, a: null };
+    const qStart = Date.now();
     addNode(`<article class="entry question" id="${id}"><span class="who">${esc(d.label)}<small>${esc(faction)}${d.disp ? ` · ${esc(d.disp.name)}` : ''}</small></span><span class="role">${esc(kind)}</span>
       <p>${esc(question)}</p>
       <div class="qbox"><textarea rows="2" maxlength="300" placeholder="Answer the ${esc(faction)}…"></textarea>
@@ -702,6 +774,9 @@ function askUser(d, question, kind) {
       node.insertAdjacentHTML('beforeend', `<p class="answer-line">${esc(shown)}</p>`);
       S.record.push(shown);
       entry.a = ans;
+      const paused = Date.now() - qStart; // the clock stops while the petitioner thinks
+      if (S.sessionEnd) S.sessionEnd += paused;
+      if (S.phaseEnd) S.phaseEnd += paused;
       S.pendingQuestion = null;
       resolve(ans);
     };
@@ -785,7 +860,14 @@ let clockTimer;
 function startClock() {
   S.t0 = Date.now();
   clearInterval(clockTimer);
-  clockTimer = setInterval(() => { $('clock').textContent = elapsed(); }, 1000);
+  clockTimer = setInterval(() => {
+    $('clock').textContent = elapsed();
+    const el = $('left'); if (!el) return;
+    if (!S.sessionEnd) { el.textContent = ''; el.classList.remove('urgent'); return; }
+    const ms = S.sessionEnd - Date.now();
+    el.textContent = ms > 0 ? `${Math.ceil(ms / 1000)}s before the Committee rises` : 'the Committee has risen';
+    el.classList.toggle('urgent', ms <= 30000);
+  }, 1000);
 }
 function elapsed() {
   if (S.elapsedFixed) return S.elapsedFixed;
@@ -795,9 +877,11 @@ function elapsed() {
 }
 
 function setPhases(list) {
+  S.activePhases = new Set(list.filter((x) => x.on !== false).map((x) => x.k));
   $('phases').innerHTML = list.map((p) => `<li data-k="${p.k}" class="${p.on === false ? 'waived' : ''}">${esc(p.name)}</li>`).join('');
 }
 function phase(k) {
+  beginPhase(k, S.delegates.length || 1);
   let seen = false;
   [...$('phases').children].forEach((li) => {
     if (li.dataset.k === k) { li.classList.add('now'); seen = true; }
@@ -1104,6 +1188,7 @@ async function democracy(motion) {
   /* 1. Call to order */
   phase('order'); phaseHead('Call to order');
   chair(`The Grand Committee will come to order. ${fmt(D.length)} delegates are seated. The motion before us: "${motion}"`);
+  if (S.sessionEnd) chair(`Under the guillotine motion this session rises in ${Math.round(S.sessionMs / 60000)} minute${S.sessionMs === 60000 ? '' : 's'}, decided or not. Delegates who have not answered by then will be recorded as not having answered.`, 'The Clerk');
   const fams = caucusStats();
   chair(`The Clerk notes the caucuses present: ${fams.slice(0, 6).map((g) => `${g.name} (${g.members.length})`).join(', ')}${fams.length > 6 ? `, and ${fams.length - 6} others` : ''}.`, 'The Clerk');
   let clerkModel = pick(pool()), clerkText = null;
@@ -1708,7 +1793,8 @@ function verdictHTML(out, adjourned) {
    ========================================================= */
 function renderReport(out, adjourned, shared = false) {
   S.reportShown = true;
-  const stats = `<p class="stats">This question consumed <b>${fmt(S.tokens)}</b> tokens across <b>${fmt(S.calls)}</b> model calls in <b>${elapsed()}</b>. ${S.failures ? `<b>${fmt(S.failures)}</b> calls went unanswered.` : 'Every call was answered.'}</p>`;
+  const cut = S.timeUp ? ' The Committee rose on the clock, and some delegates never answered.' : '';
+  const stats = `<p class="stats">This question consumed <b>${fmt(S.tokens)}</b> tokens across <b>${fmt(S.calls)}</b> model calls in <b>${elapsed()}</b>. ${S.failures ? `<b>${fmt(S.failures)}</b> calls went unanswered.` : 'Every call was answered.'}${cut}</p>`;
   const actions = shared
     ? `<div class="actions"><a class="btn" href="/">Convene your own Committee</a><button class="btn ghost" id="dl">Download the full record</button></div>`
     : `<div class="actions"><button class="btn" id="again">Bring a new motion</button><button class="btn ghost" id="share">Share this session</button><button class="btn ghost" id="dl">Download the full record</button></div><div class="sharebox hidden" id="sharebox"></div>`;
@@ -1735,6 +1821,9 @@ function renderReport(out, adjourned, shared = false) {
       ? `<div><h3>Ruling of the Parliamentarian</h3><ul>${out.rulings.map((r) => `<li><b>${esc(r.key)} ${r.compliant ? 'in order' : 'OUT OF ORDER'}${r.cost ? ` · ${esc(r.cost)}` : ''}.</b> “${esc(clip(r.text, 90))}” — ${esc(r.ruling)}${r.breaks ? ` <i>(breaks: ${esc(r.breaks)})</i>` : ''}</li>`).join('')}</ul></div>` : '';
     const deals = (out.concessions || []).length
       ? `<div><h3>Votes bought</h3><ul>${out.concessions.map((c) => `<li><b>${esc(c.to.short)}</b> opposed the motion until promised: ${esc(c.text)} — <i>${c.honored ? 'and voted for it' : 'and voted against it anyway'}</i></li>`).join('')}</ul></div>` : '';
+    const silentList = S.silent.slice().sort((a, b) => b.misses - a.misses);
+    const silence = silentList.length
+      ? `<div><h3>Delegates who did not answer</h3><p class="by">${fmt(silentList.length)} of ${fmt(S.delegates.length)} delegates failed to answer at least once, ${fmt(silentList.reduce((a, x) => a + x.misses, 0))} unanswered calls in total.</p><ul>${silentList.slice(0, 12).map((x) => `<li><b>${esc(x.short)}</b> ×${x.misses} <span class="by">(${esc((x.missPhases || []).join(', '))})</span></li>`).join('')}${silentList.length > 12 ? `<li class="by">and ${fmt(silentList.length - 12)} more</li>` : ''}</ul></div>` : '';
     const findings = out.findings.length
       ? `<div><h3>Subcommittee findings</h3><ul>${out.findings.map((f) => `<li><b>${esc(f.name)}:</b> ${esc(f.rec.toLowerCase())}</li>`).join('')}</ul></div>` : '';
     const eis = out.eis ? `<div><h3>Environmental impact${out.eis.risk ? `: risk ${out.eis.risk} of 10` : ''}</h3><p class="body">${esc(clip(out.eis.text, 420))}</p></div>` : '';
@@ -1748,7 +1837,7 @@ function renderReport(out, adjourned, shared = false) {
       <h2>${esc(out.title)}</h2>
       <p class="motion-line">"${esc(out.motion)}"</p>
       <p class="answer">The Committee's answer: ${answer}. Yeas ${fmt(t.YEA)}, nays ${fmt(t.NAY)}, present ${fmt(t.PRESENT)}, absent ${fmt(t.ABSENT)}.</p>
-      <div class="cols">${versions}${conds}${rulings}${deals}${money}${caucuses}${testimony}${amendments}${findings}${eis}${fil}${opn}${dis}${prs}</div>${stats}${actions}</section>`;
+      <div class="cols">${versions}${conds}${rulings}${deals}${money}${caucuses}${testimony}${amendments}${findings}${silence}${eis}${fil}${opn}${dis}${prs}</div>${stats}${actions}</section>`;
   } else {
     const stamp = out.ruling === 'YES' ? 'DECREED: YES' : out.ruling === 'NO' ? 'DECREED: NO' : out.ruling === 'INSTEAD' ? 'DECREED: INSTEAD' : out.ruling === 'NONE' ? 'ANARCHY' : 'DECREED';
     const testimony = out.testimony.length
@@ -1794,6 +1883,7 @@ function slimDelegate(d) {
     position: d.position || null, choice: d.choice || null, vote: d.vote || null,
     reason: d.reason || null, payer: d.payer || null, proposal: d.proposal || null,
     price: d.price || null, bought: d.bought || null, sub: d.sub,
+    misses: d.misses || 0, silent: !!d.silent, missPhases: d.missPhases || [],
   };
 }
 // Delegates appear all over the report object and point back at each other; flatten
@@ -1818,7 +1908,7 @@ async function shareSession(out, adjourned) {
       enacted: out ? (out.enacted || out.instead || null) : null,
       payer: out ? out.payer || null : null,
       adjourned: !!adjourned, rehearsal: !!S.rehearsal, conds: S.conds || null,
-      tokens: S.tokens, calls: S.calls, failures: S.failures, elapsed: elapsed(),
+      tokens: S.tokens, calls: S.calls, failures: S.failures, elapsed: elapsed(), timeUp: !!S.timeUp,
       delegateCount: S.delegates.length, createdAt: new Date().toISOString(),
     },
     entries: S.entries,
@@ -1867,6 +1957,7 @@ function renderShared(data) {
     motion: m.motion || '', tokens: m.tokens || 0, calls: m.calls || 0, failures: m.failures || 0,
     elapsedFixed: m.elapsed || '0:00', delegates: data.delegates || [], conds: m.conds || null,
     financial: !!(data.out && data.out.financial), record: (data.entries || []).map(entryText), entries: data.entries || [],
+    timeUp: !!m.timeUp, silent: (data.delegates || []).filter((d) => d.silent),
   });
   $('setup').classList.add('hidden'); $('session').classList.remove('hidden');
   $('s-motion').textContent = `"${m.motion || ''}"`;
@@ -1879,6 +1970,7 @@ function renderShared(data) {
     $('tally').classList.remove('hidden'); $('positions').classList.remove('hidden');
     tally(); renderPositions();
   } else { $('tally').classList.add('hidden'); $('positions').classList.add('hidden'); }
+  renderSilent();
   const names = [...new Set((data.entries || []).filter((e) => e.t === 'phase').map((e) => e.name))];
   $('phases').innerHTML = names.map((n) => `<li class="done">${esc(n)}</li>`).join('');
   $('feed').innerHTML = (data.entries || []).map(entryHTML).join('');
@@ -1894,7 +1986,10 @@ function renderShared(data) {
 async function convene() {
   const motion = $('motion').value.trim() || $('motion').placeholder;
   if (!pool().length) { showErr('There are no models available to seat. Check your API key or turn on rehearsal mode.'); return; }
-  Object.assign(S, { running: true, stop: false, ctrl: new AbortController(), tokens: 0, calls: 0, failures: 0, record: [], entries: [], delegates: [], votingStarted: false, reportShown: false, motion, conds: readConds(), elapsedFixed: null, shared: false });
+  Object.assign(S, { running: true, stop: false, ctrl: new AbortController(), tokens: 0, calls: 0, failures: 0, record: [], entries: [], delegates: [], votingStarted: false, reportShown: false, motion, conds: readConds(), elapsedFixed: null, shared: false,
+    silent: [], timeUp: false, phaseEnd: null, phaseName: null, warmOnly: $('warm').checked, sessionMs: Number($('cap').value) || 0 });
+  S.sessionEnd = S.sessionMs ? Date.now() + S.sessionMs : null;
+  $('silent-panel').classList.add('hidden'); $('silent-list').innerHTML = '';
   $('setup').classList.add('hidden'); $('session').classList.remove('hidden');
   $('feed').innerHTML = ''; $('report-slot').innerHTML = ''; $('trim').classList.add('hidden');
   $('s-motion').textContent = `"${motion}"`;
@@ -1922,6 +2017,8 @@ function resetToSetup() {
   window.scrollTo({ top: 0 }); $('motion').focus();
 }
 function showErr(msg) { $('err').textContent = msg; $('err').classList.remove('hidden'); }
+$('warm').onchange = () => { S.warmOnly = $('warm').checked; renderConn(); refreshAllChip(); updateEta(); };
+$('cap').onchange = () => { S.sessionMs = Number($('cap').value) || 0; updateEta(); };
 $('go').onclick = convene;
 $('stop').onclick = () => { S.stop = true; S.ctrl?.abort(); $('stop').disabled = true; if (S.pendingQuestion) { const f = S.pendingQuestion; S.pendingQuestion = null; f(); } };
 $('motion').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) convene(); });
