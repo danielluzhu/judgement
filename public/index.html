@@ -1327,6 +1327,9 @@ async function democracy(motion) {
   if (out.findings.length) ctxLines.push('Subcommittee recommendations: ' + out.findings.map((f) => `${f.name}: ${f.rec}`).join('; ') + '.');
   if (trends.caucus.length) ctxLines.push('Caucus trends: ' + trends.caucus.slice(0, 6).join('; ') + '.');
   if (out.filibuster) ctxLines.push(`${out.filibuster.by.short} filibustered for ${out.filibuster.rounds === 2 ? 'nine hours' : 'an hour'}.`);
+  if (C.any) ctxLines.push(`The petitioner's binding conditions: ${condsShort(C).join('; ')}.`);
+  if (out.struck.length) ctxLines.push(`${out.struck.length} substitute${out.struck.length === 1 ? ' was' : 's were'} struck as out of order.`);
+  if (out.concessions.length) ctxLines.push(`Concessions granted to win votes: ${out.concessions.map((c) => `${c.to.short} was promised ${clip(c.text, 60)}`).join('; ')}.`);
   const options = [{ key: 'ORIGINAL', text: motion, from: 'the petitioner' }].concat(floorSubs.map((s, i) => ({ key: `S${i + 1}`, ...s })));
   const optBlock = '\nVersions on the floor:\n' + options.map((o) => `${o.key}: ${o.key === 'ORIGINAL' ? `the motion as asked, "${o.text}"` : `substitute — "${o.text}" (offered by ${o.from})`}`).join('\n') + '\nNONE: reject all of them';
   const amdBlock = floorAmd.length ? '\nRiders under consideration:\n' + floorAmd.map((a, i) => `A${i + 1}: ${a.text}`).join('\n') : '';
@@ -1340,7 +1343,8 @@ async function democracy(motion) {
   await runPool(shuffle(D), poolLimit(), async (d) => {
     markSeat(d, 'speaking');
     const line = d.caucusLine ? `\nYour ${d.caucusLine.name} caucus line is ${d.caucusLine.line}${d.caucusLine.proposal ? `, backing the substitute "${d.caucusLine.proposal}"` : ''}. Loyalty to your caucus is expected but not mandatory.` : '';
-    const text = await ask(d.model, `${PREFACE}\n${persona(d)}\nIt is time for the final roll-call vote on "${motion}" (${out.title}).\n${ctxLines.join('\n')}${testimonyBlock(out)}${line}${optBlock}${amdBlock}\nWeigh everything you have learned since the hearing, then vote in a way consistent with your disposition and record. Reply in exactly this format:\n${fmtBlock}`, 160, 'vote', { n: floorAmd.length, opts: options.map((o) => o.key), d });
+    const deal = d.bought ? `\nYou opposed this motion until the Majority Leader met your price: "${d.bought}". You gave your word you would support it. You may still betray the deal, but the record will show that you did.` : '';
+    const text = await ask(d.model, `${PREFACE}\n${persona(d)}\nIt is time for the final roll-call vote on "${motion}" (${out.title}).\n${ctxLines.join('\n')}${testimonyBlock(out)}${line}${deal}${optBlock}${amdBlock}\nWeigh everything you have learned since the hearing, then vote in a way consistent with your disposition and record. Reply in exactly this format:\n${fmtBlock}`, 160, 'vote', { n: floorAmd.length, opts: options.map((o) => o.key), d });
     if (!text) { d.vote = 'ABSENT'; markSeat(d, 'seated'); voteLine(d, 'ABSENT', ''); tally(); return; }
     const choiceRaw = (firstLineValue(text, 'CHOICE') || '').toUpperCase();
     let choice = options.find((o) => new RegExp(`\\b${o.key}\\b`).test(choiceRaw))?.key || (/\bNONE\b|\bNAY\b|\bNO\b/.test(choiceRaw) ? 'NONE' : null);
@@ -1373,6 +1377,11 @@ async function democracy(motion) {
   else out.result = winner.key === 'ORIGINAL' ? 'PASSED' : 'AMENDED';
   out.winner = winner; out.options = options; out.noneVotes = noneVotes;
   out.amendResults = floorAmd.map((a) => ({ ...a, adopted: a.yea > a.nay }));
+  for (const c of out.concessions) c.honored = !!(c.to.choice && c.to.choice !== 'NONE');
+  if (out.concessions.length) {
+    const kept = out.concessions.filter((c) => c.honored).length;
+    chair(`Of ${out.concessions.length} vote${out.concessions.length === 1 ? '' : 's'} bought with concessions, ${kept} held${kept < out.concessions.length ? ` and ${out.concessions.length - kept} took the deal and voted against it anyway` : ''}.`, 'The Clerk');
+  }
   const adopted = out.amendResults.filter((a) => a.adopted);
   if (options.length > 1) chair(`On the versions: ${options.map((o) => `${o.key} ${o.votes}`).join(', ')}, none ${noneVotes}.`);
   if (floorAmd.length) chair(`Riders: ${out.amendResults.map((a, i) => `A${i + 1} ${a.adopted ? 'adopted' : 'rejected'} ${a.yea}–${a.nay}`).join('; ')}.`);
@@ -1397,7 +1406,9 @@ async function democracy(motion) {
   } else {
     const riders = adopted.length ? `\nRiders attached: ${adopted.map((a) => a.text).join('; ')}` : '';
     const funding = out.financial ? `\nFunding: the Committee decided by plurality that ${out.payer || 'no one in particular'} pays. State this in the sentence.` : '';
-    const text = await ask(clerkModel, `${PREFACE}\nYou are the Clerk. The Committee has just voted on the petitioner's request "${motion}". The version that prevailed is: "${winner.text}"${winner.key !== 'ORIGINAL' ? ` (a substitute offered by ${winner.from}, replacing what was asked)` : ' (exactly as asked)'}.${riders}${funding}\nWrite the enrolled text: in ONE sentence, addressed to the petitioner, state precisely what they are now to receive or do, incorporating the prevailing version, any riders, and who pays. Be concrete and a little pompous.\nENACTED: <sentence>`, 180, 'enact', { motion, winner, riders: adopted, payer: out.payer });
+    const deals = out.concessions.length ? `\nConcessions promised to the opposition in exchange for their votes: ${out.concessions.map((c) => c.text).join('; ')}. Work at least one of them into the sentence.` : '';
+    const condLine = C.any ? `\nThe petitioner's binding conditions, which the enrolled text must respect: ${condsShort(C).join('; ')}.` : '';
+    const text = await ask(clerkModel, `${PREFACE}\nYou are the Clerk. The Committee has just voted on the petitioner's request "${motion}". The version that prevailed is: "${winner.text}"${winner.key !== 'ORIGINAL' ? ` (a substitute offered by ${winner.from}, replacing what was asked)` : ' (exactly as asked)'}.${riders}${funding}${deals}${condLine}\nWrite the enrolled text: in ONE sentence, addressed to the petitioner, state precisely what they are now to receive or do, incorporating the prevailing version, any riders, and who pays. Be concrete and a little pompous.\nENACTED: <sentence>`, 180, 'enact', { motion, winner, riders: adopted, payer: out.payer, deals: out.concessions });
     out.enacted = (text && (firstLineValue(text, 'ENACTED') || text.split('\n')[0]).replace(/^["']|["']$/g, '')) || (winner.key === 'ORIGINAL' ? `You shall proceed exactly as you asked: ${motion}` : `Instead of what you asked, you shall have: ${winner.text}`) + (out.payer ? `, paid for by ${out.payer}` : '');
     chair(`Enrolled and entered: ${out.enacted}`, 'The Clerk');
   }
@@ -1499,7 +1510,7 @@ async function autocracy(motion) {
   const counsel = ministers.filter((m) => m.advice).map((m) => `- ${m.short} (${m.portfolio}): ${clip(m.advice.replace(/\s+/g, ' '), 200)}`).join('\n');
   let decree = null;
   for (let tries = 0; tries < 4 && !decree; tries++) {
-    decree = await ask(ruler.model, `You are ${ruler.label}, absolute ruler of the realm, answerable to no one. Your temperament: ${ruler.disp.name} ("${ruler.disp.creed}"). The matter before you: "${motion}".${testimonyBlock(out)}\n${counsel ? `Your ministers advised:\n${counsel}\n` : ''}Issue a grandiose royal decree in 3 to 5 sentences. You may grant the request, refuse it, or decree that the petitioner shall have something else entirely. Then add these lines:\nRULING: YES, NO, or INSTEAD\nINSTEAD: if the ruling is INSTEAD, exactly what the petitioner shall have or do in place of what they asked; otherwise NONE${out.financial ? '\nPAYER: who shall pay for it, in a few words' : ''}\nBANISHED: <name of one minister to banish, or NONE>`, 380, 'decree', { motion, ministers, money: out.financial });
+    decree = await ask(ruler.model, `You are ${ruler.label}, absolute ruler of the realm, answerable to no one. Your temperament: ${ruler.disp.name} ("${ruler.disp.creed}"). The matter before you: "${motion}".${condsBlock(S.conds)}${S.conds && S.conds.any ? ' You are not bound by the petitioner\'s conditions, but ignoring them is a choice you are making.' : ''}${testimonyBlock(out)}\n${counsel ? `Your ministers advised:\n${counsel}\n` : ''}Issue a grandiose royal decree in 3 to 5 sentences. You may grant the request, refuse it, or decree that the petitioner shall have something else entirely. Then add these lines:\nRULING: YES, NO, or INSTEAD\nINSTEAD: if the ruling is INSTEAD, exactly what the petitioner shall have or do in place of what they asked; otherwise NONE${out.financial ? '\nPAYER: who shall pay for it, in a few words' : ''}\nBANISHED: <name of one minister to banish, or NONE>`, 380, 'decree', { motion, ministers, money: out.financial });
     if (!decree && tries < 3) {
       const usurper = mkDelegate(pick(pool().filter((m) => m !== ruler.model)), 0);
       chair(`${ruler.label} has not responded. A coup! ${usurper.model} seizes the throne.`, 'The Herald');
